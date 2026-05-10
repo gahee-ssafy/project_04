@@ -1,12 +1,12 @@
 import os
 import asyncio
 from typing import AsyncGenerator
+import google.generativeai as genai
 
-# -------------------------------------------------------------
-# STEP 0: Mock 모드 설정 (API 키 체크 생략)
-# -------------------------------------------------------------
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "mock_key")
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "mock_key")
+
+# Gemini 클라이언트 초기화를 함수 호출 시점으로 미룸 (load_dotenv 이후 실행 보장)
+
 
 class SearchResult:
     def __init__(self, title: str, url: str, snippet: str, rank: int):
@@ -15,14 +15,12 @@ class SearchResult:
         self.snippet = snippet
         self.rank = rank
 
+
 # =============================================================
-# STEP 1: 웹 검색 Mock - Serper 호출 대신 가짜 결과 반환
+# STEP 1: 웹 검색 Mock (TODO: Serper 연결)
 # =============================================================
 async def fetch_web_results(query: str, num_results: int = 5) -> list[SearchResult]:
-    """네트워크 호출 없이 즉시 가짜 검색 결과 3개를 반환합니다."""
-    # 실제 httpx 호출 부분은 주석 처리하여 부하를 방지합니다.
-    await asyncio.sleep(0.5) # 실제 검색하는 척 0.5초 대기
-    
+    await asyncio.sleep(0.5)
     mock_results = [
         SearchResult(
             title=f"{query}에 대한 첫 번째 검색 결과",
@@ -39,8 +37,9 @@ async def fetch_web_results(query: str, num_results: int = 5) -> list[SearchResu
     ]
     return mock_results[:num_results]
 
+
 # =============================================================
-# STEP 2: 컨텍스트 구성 (기존 로직 유지)
+# STEP 2: 컨텍스트 구성
 # =============================================================
 def build_context(results: list[SearchResult]) -> str:
     if not results:
@@ -48,35 +47,75 @@ def build_context(results: list[SearchResult]) -> str:
     context_parts = [f"[{r.rank}] {r.title}: {r.snippet}" for r in results]
     return "\n".join(context_parts)
 
+
 # =============================================================
-# STEP 3: Gemini 스트리밍 Mock - API 호출 없이 한 글자씩 출력
+# STEP 3: Gemini 스트리밍 (실제 API 호출)
 # =============================================================
 async def generate_answer_stream(
     query: str,
     context: str,
 ) -> AsyncGenerator[str, None]:
-    """Gemini API 호출 없이 미리 준비된 가짜 답변을 한 글자씩 스트리밍합니다."""
-    
-    full_response = f"질문하신 '{query}'에 대해 검색한 결과입니다. [1], [2] 출처를 참고했을 때, 현재는 Mock 모드로 동작 중이므로 실제 AI 답변 대신 이 메시지가 출력됩니다. API 키를 설정하면 실제 Gemini-2.0-flash의 답변이 나옵니다."
+    # 함수 실행 시점에 키를 읽어야 load_dotenv() 이후 값을 가져올 수 있음
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-    # 한 글자씩(또는 단어씩) 쪼개서 스트리밍 흉내내기
-    for word in full_response.split():
-        await asyncio.sleep(0.1) # 0.1초마다 단어 출력 (스트리밍 느낌)
-        yield word + " "
+    model = genai.GenerativeModel(
+        model_name="gemini-3.1-flash-lite",
+        system_instruction="당신은 친절한 AI 검색 어시스턴트입니다. 제공된 컨텍스트를 바탕으로 한국어로 답변하세요."
+    )
+
+    prompt = f"[검색 컨텍스트]\n{context}\n\n[질문]\n{query}"
+
+    # Gemini SDK는 동기 방식이라 별도 스레드에서 실행
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(
+        None,
+        lambda: model.generate_content(prompt, stream=True)
+    )
+
+    for chunk in response:
+        if chunk.text:
+            yield chunk.text
 
 # =============================================================
-# run_rag_pipeline - 메인 파이프라인 (Mock 버전)
+# 이미지 + 질문을 Gemini에 넘기는 함수
+# 기존 generate_answer_stream 아래에 추가
+# =============================================================
+async def generate_image_answer_stream(
+    query: str,
+    image_bytes: bytes,
+    image_mime: str,  # "image/jpeg", "image/png" 등
+) -> AsyncGenerator[str, None]:
+
+    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+    model = genai.GenerativeModel(
+        model_name="gemini-3.1-flash-lite",
+        system_instruction="당신은 친절한 AI 어시스턴트입니다. 이미지와 질문을 함께 분석해서 한국어로 답변하세요."
+    )
+
+    # Gemini에 이미지와 텍스트를 함께 전달
+    prompt = [
+        {"mime_type": image_mime, "data": image_bytes},  # 이미지
+        query,                                            # 텍스트 질문
+    ]
+
+    loop = asyncio.get_event_loop()
+    response = await loop.run_in_executor(
+        None,
+        lambda: model.generate_content(prompt, stream=True)
+    )
+
+    for chunk in response:
+        if chunk.text:
+            yield chunk.text
+            
+# =============================================================
+# 메인 파이프라인
 # =============================================================
 async def run_rag_pipeline(
     query: str,
 ) -> tuple[list[SearchResult], AsyncGenerator[str, None]]:
-    # 1. 가짜 검색 결과 수집
     sources = await fetch_web_results(query, num_results=5)
-
-    # 2. 컨텍스트 구성
     context = build_context(sources)
-
-    # 3. 가짜 스트리밍 제너레이터 반환
     stream = generate_answer_stream(query, context)
-
     return sources, stream

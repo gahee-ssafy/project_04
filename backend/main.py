@@ -9,7 +9,9 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from database import init_db
 from routers import search
+from dotenv import load_dotenv
 
+load_dotenv()
 
 # -------------------------------------------------------------
 # lifespan: 서버 시작/종료 시 실행할 이벤트 핸들러

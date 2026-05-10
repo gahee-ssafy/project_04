@@ -29,6 +29,8 @@ class SearchQuery(SQLModel, table=True):
     # 레코드 생성 시각
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
+    # 이미지 바이트 데이터 (이미지 검색이면 저장, 텍스트 검색이면 None)
+    image_data: Optional[bytes] = Field(default=None)
 
 # -------------------------------------------------------------
 # SearchSource - 검색 결과에서 참조한 출처(소스) 테이블
