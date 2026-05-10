@@ -5,8 +5,6 @@ import google.generativeai as genai
 
 SERPER_API_KEY = os.getenv("SERPER_API_KEY", "mock_key")
 
-# Gemini 클라이언트 초기화를 함수 호출 시점으로 미룸 (load_dotenv 이후 실행 보장)
-
 
 class SearchResult:
     def __init__(self, title: str, url: str, snippet: str, rank: int):
@@ -49,23 +47,38 @@ def build_context(results: list[SearchResult]) -> str:
 
 
 # =============================================================
-# STEP 3: Gemini 스트리밍 (실제 API 호출)
+# STEP 3: Gemini 스트리밍 (텍스트 / 이미지 통합)
 # =============================================================
 async def generate_answer_stream(
     query: str,
-    context: str,
+    context: str = "",
+    image_bytes: bytes = None,
+    image_mime: str = None,  # "image/jpeg", "image/png" 등
 ) -> AsyncGenerator[str, None]:
-    # 함수 실행 시점에 키를 읽어야 load_dotenv() 이후 값을 가져올 수 있음
     genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+
+    system_instruction = (
+        "당신은 친절한 AI 어시스턴트입니다. "
+        "이미지와 질문을 함께 분석해서 한국어로 답변하세요."
+        if image_bytes else
+        "당신은 친절한 AI 검색 어시스턴트입니다. "
+        "제공된 컨텍스트를 바탕으로 한국어로 답변하세요."
+    )
 
     model = genai.GenerativeModel(
         model_name="gemini-3.1-flash-lite",
-        system_instruction="당신은 친절한 AI 검색 어시스턴트입니다. 제공된 컨텍스트를 바탕으로 한국어로 답변하세요."
+        system_instruction=system_instruction
     )
 
-    prompt = f"[검색 컨텍스트]\n{context}\n\n[질문]\n{query}"
+    # 이미지 유무에 따라 prompt 형태만 분기
+    if image_bytes:
+        prompt = [
+            {"mime_type": image_mime, "data": image_bytes},
+            f"{context}\n\n{query}" if context else query,
+        ]
+    else:
+        prompt = f"[검색 컨텍스트]\n{context}\n\n[질문]\n{query}"
 
-    # Gemini SDK는 동기 방식이라 별도 스레드에서 실행
     loop = asyncio.get_event_loop()
     response = await loop.run_in_executor(
         None,
@@ -76,46 +89,16 @@ async def generate_answer_stream(
         if chunk.text:
             yield chunk.text
 
-# =============================================================
-# 이미지 + 질문을 Gemini에 넘기는 함수
-# 기존 generate_answer_stream 아래에 추가
-# =============================================================
-async def generate_image_answer_stream(
-    query: str,
-    image_bytes: bytes,
-    image_mime: str,  # "image/jpeg", "image/png" 등
-) -> AsyncGenerator[str, None]:
 
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
-
-    model = genai.GenerativeModel(
-        model_name="gemini-3.1-flash-lite",
-        system_instruction="당신은 친절한 AI 어시스턴트입니다. 이미지와 질문을 함께 분석해서 한국어로 답변하세요."
-    )
-
-    # Gemini에 이미지와 텍스트를 함께 전달
-    prompt = [
-        {"mime_type": image_mime, "data": image_bytes},  # 이미지
-        query,                                            # 텍스트 질문
-    ]
-
-    loop = asyncio.get_event_loop()
-    response = await loop.run_in_executor(
-        None,
-        lambda: model.generate_content(prompt, stream=True)
-    )
-
-    for chunk in response:
-        if chunk.text:
-            yield chunk.text
-            
 # =============================================================
 # 메인 파이프라인
 # =============================================================
 async def run_rag_pipeline(
     query: str,
+    image_bytes: bytes = None,
+    image_mime: str = None,
 ) -> tuple[list[SearchResult], AsyncGenerator[str, None]]:
     sources = await fetch_web_results(query, num_results=5)
     context = build_context(sources)
-    stream = generate_answer_stream(query, context)
+    stream = generate_answer_stream(query, context, image_bytes, image_mime)
     return sources, stream

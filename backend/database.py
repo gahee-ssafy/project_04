@@ -17,6 +17,7 @@ DB_PATH = os.getenv("DB_PATH", "./data/search.db")
 # data/ 디렉토리가 없으면 자동 생성
 os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
+# [질문] aiosqlite가 뭐예요? 
 # aiosqlite를 사용한 비동기 SQLite 연결 URL
 DATABASE_URL = f"sqlite+aiosqlite:///{DB_PATH}"
 
