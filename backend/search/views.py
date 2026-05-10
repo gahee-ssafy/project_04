@@ -5,16 +5,24 @@ from django.http import StreamingHttpResponse
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework import status
+from drf_spectacular.utils import extend_schema, OpenApiParameter
+from drf_spectacular.types import OpenApiTypes
 
 from .models import SearchQuery, SearchSource
-from .serializers import SearchQuerySerializer, SearchRequestSerializer
-from search_engine import run_rag_pipeline, generate_image_answer_stream
+from .serializers import SearchQuerySerializer, SearchRequestSerializer, SearchImageRequestSerializer
+from search_engine import run_rag_pipeline, generate_answer_stream
 
 
 # =============================================================
 # POST /api/search - 텍스트 검색
 # =============================================================
 class SearchView(APIView):
+    @extend_schema(
+        request=SearchRequestSerializer,
+        responses={200: OpenApiTypes.STR},
+        summary="텍스트 검색",
+        description="query를 받아 RAG 파이프라인으로 스트리밍 답변을 반환합니다.",
+    )
     def post(self, request):
         serializer = SearchRequestSerializer(data=request.data)
         if not serializer.is_valid():
@@ -27,7 +35,6 @@ class SearchView(APIView):
             asyncio.set_event_loop(loop)
             full_answer = ""
             start_time = time.time()
-            db_query = None
 
             try:
                 sources, answer_stream = loop.run_until_complete(run_rag_pipeline(query))
@@ -40,12 +47,6 @@ class SearchView(APIView):
                 yield f"data: {json.dumps({'type': 'sources', 'data': sources_data}, ensure_ascii=False)}\n\n"
 
                 # 스트리밍 청크 전송
-                async def collect_stream():
-                    nonlocal full_answer
-                    async for chunk in answer_stream:
-                        full_answer += chunk
-                        yield chunk
-
                 for chunk_text in loop.run_until_complete(_collect(answer_stream)):
                     full_answer += chunk_text
                     payload = json.dumps({"type": "chunk", "text": chunk_text}, ensure_ascii=False)
@@ -83,15 +84,30 @@ class SearchView(APIView):
 # POST /api/search/image - 이미지 + 텍스트 검색
 # =============================================================
 class SearchImageView(APIView):
+    @extend_schema(
+        request={
+            "multipart/form-data": {
+                "type": "object",
+                "properties": {
+                    "query": {"type": "string"},
+                    # swagger에서 이미지를 못받는 이슈
+                    # format: binary 추가
+                    "image": {"type": "string", "format": "binary"},
+                },
+                "required": ["query", "image"],
+            }
+        },
+        responses={200: OpenApiTypes.STR},
+        summary="이미지 + 텍스트 검색",
+        description="query와 image를 함께 받아 Gemini로 스트리밍 답변을 반환합니다.",
+    )
     def post(self, request):
-        query = request.data.get("query", "").strip()
-        image = request.FILES.get("image")
+        serializer = SearchImageRequestSerializer(data=request.data)
+        if not serializer.is_valid():
+            return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
-        if not query:
-            return Response({"error": "검색어를 입력해주세요."}, status=status.HTTP_400_BAD_REQUEST)
-        if not image:
-            return Response({"error": "이미지를 첨부해주세요."}, status=status.HTTP_400_BAD_REQUEST)
-
+        query = serializer.validated_data["query"]
+        image = serializer.validated_data["image"]
         image_bytes = image.read()
         image_mime = image.content_type
 
@@ -102,13 +118,14 @@ class SearchImageView(APIView):
             start_time = time.time()
 
             try:
-                async def collect():
-                    chunks = []
-                    async for chunk in generate_image_answer_stream(query, image_bytes, image_mime):
-                        chunks.append(chunk)
-                    return chunks
-
-                chunks = loop.run_until_complete(collect())
+                # 통합된 generate_answer_stream 호출 (키워드 인자 사용)
+                chunks = loop.run_until_complete(
+                    _collect(generate_answer_stream(
+                        query,
+                        image_bytes=image_bytes,
+                        image_mime=image_mime,
+                    ))
+                )
 
                 for chunk_text in chunks:
                     full_answer += chunk_text
