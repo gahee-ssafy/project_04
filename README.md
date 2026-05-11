@@ -21,9 +21,11 @@ uvicorn main:app --reload
 
 # 업무관리
 
-1. fastAPI - sqlite 저장 확인
-2. LLM api_key 연결이 차후 업무
-3. ![0510](./ret/image01_0510.png)
+1. fastAPI - sqlite 저장 확인 -> DB 설계 역량 미달로 프레임워크 변경
+   - django - sqlite
+2. LLM api_key 연결이 차후 업무 -> 완료.
+   ![0510](./ret/image01_0510.png)
+3. 검색엔진 만들기. - streamlit으로 작업하고 이후 search_engine.py 추가
 
 # 구조
 
