@@ -3,8 +3,15 @@ frontend : react
 DB : sqlite3
 LLM : gemini-flash-3
 
+```
+cd /backend
+uvicorn main:app --reload --port 8000
+```
+
 # 업무관리
 
-1. 채팅웹
-2. 검색엔진 - perplexity
-3.
+1. problem-solution 쌓기.
+
+```
+./venv/Scripts/python.exe scripts/generate_solutions.py
+```
