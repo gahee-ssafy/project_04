@@ -69,7 +69,7 @@ def generate(force: bool = False):
     if force:
         targets = problems
     else:
-        targets = [p for p in problems if not p.get('solution')]
+        targets = [p for p in problems if not p.get('solution') or not p['solution'].strip()]
 
     total = len(targets)
     print(f'풀이 생성 대상: {total}개 / 전체 {len(problems)}개')

@@ -44,19 +44,34 @@ def guess_difficulty(q_num):
 
 # ── 문제 번호 위치 탐색 ────────────────────────────────────
 def _find_question_pos(page, q_num):
-    """단어 단위로 'N.' 을 찾아 (x0, y0) 반환. 2열 레이아웃 양쪽 대응."""
+    """단어 단위로 'N.' 을 찾아 (x0, y0) 반환. 2열 레이아웃 양쪽 대응.
+    '문 N.' 형식도 지원 (앞 단어가 '문'이면 그 x0 기준으로 판별)
+    """
     words = page.get_text('words')
     target = f'{q_num}.'
     pw = page.rect.width
     col_threshold = pw * 0.45
 
-    for w in words:
-        if w[4].strip() == target:
-            x0 = w[0]
-            in_left  = x0 <= pw * 0.15
-            in_right = col_threshold < x0 <= pw * 0.65
-            if in_left or in_right:
-                return x0, w[1]
+    for i, w in enumerate(words):
+        word = w[4].strip()
+        x0   = w[0]
+
+        # 케이스 1: 단어가 정확히 "1." — 앞 단어가 "문"이면 그 x0 사용
+        if word == target:
+            if i > 0 and words[i-1][4].strip() == '문':
+                x0 = words[i-1][0]
+
+        # 케이스 2: "문10." 처럼 붙어있는 경우
+        elif word == f'문{target}' or word == f'문 {target}':
+            pass  # x0 그대로 사용
+
+        else:
+            continue
+
+        in_left  = x0 <= pw * 0.20
+        in_right = col_threshold < x0 <= pw * 0.65
+        if in_left or in_right:
+            return x0, w[1]
     return None
 
 # ── 문제 이미지 크롭 ──────────────────────────────────────
