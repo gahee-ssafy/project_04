@@ -5,6 +5,7 @@ import RegisterPage from './pages/RegisterPage'
 import NotebookPage from './pages/NotebookPage'
 import ExamListPage from './pages/ExamListPage'
 import ExamPage from './pages/ExamPage'
+import ReportPage from './pages/ReportPage'
 import './App.css'
 
 function PrivateRoute({ children }) {
@@ -46,8 +47,16 @@ function HomePage() {
         >
           오답노트
         </button>
+        <button
+          className={`home-tab ${tab === 'report' ? 'active' : ''}`}
+          onClick={() => navigate('/?tab=report')}
+        >
+          학습일지
+        </button>
       </div>
-      {tab === 'exam' ? <ExamListPage /> : <NotebookPage />}
+      {tab === 'exam' && <ExamListPage />}
+      {tab === 'notebook' && <NotebookPage />}
+      {tab === 'report' && <ReportPage />}
     </div>
   )
 }

@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import init_db
-from routers import auth, sessions, memo, problems, exam, ai
+from routers import auth, sessions, memo, problems, exam, ai, report
 
 app = FastAPI(
     title="AI 경제학 튜터 API",
@@ -28,6 +28,7 @@ app.include_router(memo.router,      prefix="/notebook",  tags=["오답노트"])
 app.include_router(problems.router,  prefix="/problems",  tags=["문제은행"])
 app.include_router(exam.router,      prefix="/exam",      tags=["모의고사"])
 app.include_router(ai.router,        prefix="/ai",        tags=["AI"])
+app.include_router(report.router,    prefix="/report",    tags=["학습일지"])
 
 
 @app.get("/", tags=["헬스체크"])

@@ -677,3 +677,181 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 /* 블록 수식만 가로 스크롤 허용 */
 .katex-display { overflow-x: auto; overflow-y: hidden; }
 .katex-html { white-space: normal; }
+
+/* ══════════════════════════════════════════════════════
+   학습일지 보고서
+══════════════════════════════════════════════════════ */
+.report-page {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* 헤더 */
+.report-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.report-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  flex: 1;
+}
+.report-date {
+  font-size: 0.8rem;
+  color: #888;
+}
+.btn-report-refresh {
+  background: none;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  font-size: 1rem;
+  color: #555;
+  line-height: 1;
+}
+.btn-report-refresh:hover { background: #f0f0f0; }
+
+/* 숫자 칩 */
+.report-chips {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.report-chip {
+  flex: 1;
+  min-width: 70px;
+  background: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 12px;
+  padding: 12px 8px;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0,0,0,.05);
+}
+.chip-num {
+  display: block;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #2563eb;
+  line-height: 1.2;
+}
+.chip-label {
+  display: block;
+  font-size: 0.72rem;
+  color: #888;
+  margin-top: 3px;
+}
+
+/* 섹션 */
+.report-section {
+  background: white;
+  border: 1px solid #e8e8e8;
+  border-radius: 14px;
+  overflow: hidden;
+  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+}
+.report-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px 12px;
+  border-bottom: 1px solid #f0f0f0;
+  background: #fafafa;
+}
+.report-section-icon { font-size: 1.1rem; }
+.report-section-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #333;
+}
+.report-section-body {
+  padding: 16px 18px;
+  font-size: 0.9rem;
+  line-height: 1.7;
+  color: #444;
+}
+
+/* 개념 바 */
+.report-concepts {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.report-concept-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.report-concept-name {
+  width: 120px;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #333;
+  flex-shrink: 0;
+}
+.report-concept-bar-wrap {
+  flex: 1;
+  height: 10px;
+  background: #f0f0f0;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.report-concept-bar {
+  height: 100%;
+  background: linear-gradient(90deg, #2563eb, #60a5fa);
+  border-radius: 5px;
+  min-width: 6px;
+  transition: width 0.4s ease;
+}
+.report-concept-count {
+  width: 32px;
+  font-size: 0.78rem;
+  color: #888;
+  text-align: right;
+  flex-shrink: 0;
+}
+.report-concepts-note {
+  font-size: 0.75rem;
+  color: #aaa;
+  margin-top: 8px;
+}
+
+/* 직접 질문 */
+.report-quotes {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+.report-quote-item {
+  background: #f8f9ff;
+  border-left: 3px solid #2563eb;
+  padding: 10px 14px;
+  border-radius: 0 8px 8px 0;
+  font-size: 0.875rem;
+  color: #333;
+  line-height: 1.6;
+}
+.report-quote-mark {
+  color: #2563eb;
+  font-size: 1.1rem;
+  font-weight: 700;
+  margin: 0 2px;
+}
+
+/* 빈 상태 */
+.report-empty {
+  text-align: center;
+  padding: 60px 20px;
+  color: #888;
+  font-size: 0.95rem;
+  line-height: 2;
+}
+.report-empty p:first-child { font-size: 2.5rem; margin-bottom: 8px; }
