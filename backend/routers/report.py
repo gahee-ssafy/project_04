@@ -8,4 +8,11 @@ router = APIRouter()
 
 @router.get("")
 def get_report(user=Depends(get_current_user)):
-    return generate_report(user["id"])
+    """캐시된 AI 분석 포함 통합 보고서"""
+    return generate_report(user["id"], regenerate=False)
+
+
+@router.post("/regenerate")
+def regenerate_report(user=Depends(get_current_user)):
+    """AI 분석 재생성 후 저장"""
+    return generate_report(user["id"], regenerate=True)

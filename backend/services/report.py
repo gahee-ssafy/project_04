@@ -1,16 +1,16 @@
 """
 학습일지 보고서 생성 서비스
-AI 미사용 — 통계 + 경제학 개념 사전 매칭 + 조건부 템플릿 문장으로 구성
+- 통계·개념·인용 → 템플릿 (항상 최신 데이터)
+- 학습 패턴 분석·추천 학습 방향 → Gemini (DB 캐시, 재생성 선택 가능)
 """
-import re
 import json
+import re
 from collections import Counter
-from datetime import datetime, timezone
+from datetime import datetime
 
-from database import get_conn
+from database import get_conn, get_learning_report, save_learning_report
 
 # ─── 경제학 개념 사전 ────────────────────────────────────────────
-# { 표시 이름: [매칭할 키워드 목록] }
 ECON_CONCEPTS = {
     "수요": ["수요곡선", "수요량", "수요 변화", "수요가", "수요는", "수요를", "수요의"],
     "공급": ["공급곡선", "공급량", "공급 변화", "공급가", "공급는", "공급를", "공급의"],
@@ -28,28 +28,15 @@ ECON_CONCEPTS = {
     "시장실패": ["시장실패", "외부효과", "공공재", "독점", "과점", "정보비대칭"],
     "IS-LM": ["IS곡선", "LM곡선", "IS-LM", "유동성함정"],
     "총수요·총공급": ["총수요", "총공급", "AD곡선", "AS곡선", "AD-AS"],
-    "필립스곡선": ["필립스곡선", "필립스 곡선", "실업률과 인플레"],
+    "필립스곡선": ["필립스곡선", "필립스 곡선"],
     "케인즈": ["케인즈", "케인지안", "유효수요", "절약의 역설"],
     "승수효과": ["승수효과", "지출승수", "세금승수", "균형재정승수"],
     "최저임금·가격규제": ["최저임금", "최고가격", "가격하한", "가격상한"],
 }
 
-# ─── 불용어 ──────────────────────────────────────────────────────
-STOPWORDS = {
-    "이", "가", "을", "를", "은", "는", "의", "에", "도", "로", "으로",
-    "이다", "있다", "없다", "하다", "되다", "같다", "보다",
-    "그런데", "그리고", "그래서", "하지만", "왜냐하면",
-    "문제", "내용", "경우", "설명", "이유", "때문", "부분", "개념",
-    "관련", "통해", "따라", "위해", "대한", "대해", "것이", "것은", "것을",
-    "어떻게", "왜", "무엇", "어떤", "얼마나",
-}
-
-
 # ─── DB 조회 ─────────────────────────────────────────────────────
 def _get_raw_data(user_id: int) -> dict:
     conn = get_conn()
-
-    # 오답노트 항목 (오답노트 + 모의고사)
     notebook_rows = conn.execute(
         """SELECT s.id, s.question, s.created_at, COALESCE(m.memo, '') AS memo
            FROM sessions s
@@ -59,15 +46,10 @@ def _get_raw_data(user_id: int) -> dict:
            ORDER BY s.created_at ASC""",
         (user_id,),
     ).fetchall()
-
-    # AI 채팅 내역
     chat_rows = conn.execute(
-        """SELECT notebook_session_id, messages
-           FROM notebook_chats
-           WHERE user_id = ?""",
+        "SELECT notebook_session_id, messages FROM notebook_chats WHERE user_id = ?",
         (user_id,),
     ).fetchall()
-
     conn.close()
 
     notebooks = [dict(r) for r in notebook_rows]
@@ -82,26 +64,18 @@ def _get_raw_data(user_id: int) -> dict:
     return {"notebooks": notebooks, "chats_by_session": chats_by_session}
 
 
-# ─── 통계 계산 ───────────────────────────────────────────────────
+# ─── 통계 ────────────────────────────────────────────────────────
 def _calc_stats(notebooks: list, chats_by_session: dict) -> dict:
     total = len(notebooks)
     if total == 0:
         return {"total": 0}
-
-    memo_count = sum(1 for n in notebooks if n["memo"].strip())
+    memo_count   = sum(1 for n in notebooks if n["memo"].strip())
     chat_sessions = sum(1 for n in notebooks if n["id"] in chats_by_session)
-
-    # 학생이 보낸 메시지 수 (role == "user", opener 이후)
-    student_msg_count = 0
-    for msgs in chats_by_session.values():
-        student_msg_count += sum(1 for m in msgs if m.get("role") == "user")
-
-    # 활동 기간
+    student_msg_count = sum(
+        1 for msgs in chats_by_session.values()
+        for m in msgs if m.get("role") == "user"
+    )
     dates = [n["created_at"][:10] for n in notebooks if n.get("created_at")]
-    first_date = min(dates) if dates else None
-    last_date = max(dates) if dates else None
-    active_days = len(set(dates))
-
     return {
         "total": total,
         "memo_count": memo_count,
@@ -109,140 +83,120 @@ def _calc_stats(notebooks: list, chats_by_session: dict) -> dict:
         "chat_sessions": chat_sessions,
         "chat_rate": round(chat_sessions / total * 100) if total else 0,
         "student_msg_count": student_msg_count,
-        "first_date": first_date,
-        "last_date": last_date,
-        "active_days": active_days,
+        "first_date": min(dates) if dates else None,
+        "last_date":  max(dates) if dates else None,
+        "active_days": len(set(dates)),
     }
 
 
 # ─── 텍스트 수집 ─────────────────────────────────────────────────
-def _collect_text(notebooks: list, chats_by_session: dict) -> str:
-    parts = []
-    for n in notebooks:
-        if n["memo"].strip():
-            parts.append(n["memo"])
+def _collect_text(notebooks, chats_by_session) -> str:
+    parts = [n["memo"] for n in notebooks if n["memo"].strip()]
     for msgs in chats_by_session.values():
-        for m in msgs:
-            if m.get("role") == "user":
-                parts.append(m["content"])
+        parts += [m["content"] for m in msgs if m.get("role") == "user"]
     return " ".join(parts)
 
 
-# ─── 경제학 개념 매칭 ────────────────────────────────────────────
+# ─── 개념 추출 ───────────────────────────────────────────────────
 def _extract_concepts(text: str) -> list[tuple[str, int]]:
-    """개념 사전과 매칭해 (개념명, 등장 횟수) 리스트 반환 (빈도순)."""
     counts = Counter()
     for concept, keywords in ECON_CONCEPTS.items():
         for kw in keywords:
             counts[concept] += text.count(kw)
-    # 1회 이상만
     result = [(c, n) for c, n in counts.items() if n > 0]
     result.sort(key=lambda x: -x[1])
-    return result[:6]  # 상위 6개
+    return result[:6]
 
 
 # ─── 학생 직접 질문 추출 ─────────────────────────────────────────
-def _extract_student_quotes(chats_by_session: dict) -> list[str]:
-    quotes = []
+def _extract_student_quotes(chats_by_session: dict, limit_for_display: int = 5) -> list[str]:
+    """학생 질문 전체 추출. display용은 앞 5개만 쓰고, AI 분석용은 전체 반환."""
+    quotes, seen = [], set()
     for msgs in chats_by_session.values():
         for m in msgs:
             if m.get("role") == "user":
                 text = m["content"].strip()
-                # 너무 짧은 건 제외 (단순 "네", "아니요" 등)
-                if len(text) >= 10:
+                if len(text) >= 10 and text not in seen:
+                    seen.add(text)
                     quotes.append(text)
-    # 중복 제거 후 최대 5개
-    seen = set()
-    result = []
-    for q in quotes:
-        if q not in seen:
-            seen.add(q)
-            result.append(q)
-        if len(result) >= 5:
-            break
-    return result
+    return quotes
 
 
-# ─── 템플릿 문장 생성 ────────────────────────────────────────────
-def _build_overview(stats: dict) -> str:
-    total = stats["total"]
-    memo_rate = stats["memo_rate"]
-    chat_sessions = stats["chat_sessions"]
-    active_days = stats["active_days"]
-    first = stats.get("first_date", "")
-    last = stats.get("last_date", "")
+def _extract_student_quotes_for_display(chats_by_session: dict) -> list[str]:
+    return _extract_student_quotes(chats_by_session)[:5]
 
+
+# ─── AI 프롬프트 ────────────────────────────────────────────────
+_AI_PROMPT = """아래는 한 학생이 경제학 오답노트에 직접 적은 메모와 AI 토론에서 한 질문들이에요.
+
+{data}
+
+이 내용만 보고 딱 두 가지를 JSON으로만 답해주세요. 다른 말은 절대 하지 마세요.
+
+규칙:
+- 반드시 위에 있는 내용(메모, 질문)만 근거로 삼으세요.
+- 없는 내용을 언급하거나 "메모가 없어요", "질문이 적어요" 같은 말은 절대 하지 마세요.
+- 말투: 친한 선배처럼 편하게. "~네요", "~하더라고요", "~해봐요" 같은 자연스러운 어투.
+- 딱딱한 강의체, 면책 문구, 인사말 금지.
+
+{{
+  "pattern": "위의 메모와 질문 내용을 근거로 이 학생의 학습 패턴을 2~3문장으로. 어떤 개념을 헷갈려하는지, 어떤 방식으로 이해하려는지 구체적으로.",
+  "advice": "100자 이내. 위 질문이나 메모 중 하나를 따옴표로 직접 인용해서 콕 집어 조언 1가지만."
+}}"""
+
+
+def _build_data_section(stats, concepts, quotes, notebooks) -> str:
     lines = []
 
-    # 전체 문항 수
-    if total == 0:
-        return "아직 오답노트에 기록된 문제가 없어요."
-    elif total < 5:
-        lines.append(f"총 **{total}개**의 문제를 오답노트에 담았어요. 시작이 반이에요! 💪")
-    elif total < 15:
-        lines.append(f"총 **{total}개**의 오답 문제를 기록했어요.")
-    else:
-        lines.append(f"총 **{total}개**의 오답 문제를 꾸준히 모았어요. 성실한 학습 태도네요! 📚")
+    # 실제 메모 내용 (전부)
+    memos = [n["memo"].strip() for n in notebooks if n.get("memo", "").strip()]
+    if memos:
+        lines.append("[학생이 직접 작성한 메모]")
+        for m in memos:
+            lines.append(f'  - "{m}"')
 
-    # 메모율
-    if memo_rate >= 70:
-        lines.append(f"문제의 **{memo_rate}%**에 직접 메모를 남겼어요. 꼼꼼한 복습 습관이 잘 잡혀 있네요.")
-    elif memo_rate >= 40:
-        lines.append(f"문제의 **{memo_rate}%**에 메모를 작성했어요. 조금 더 채워가면 좋을 것 같아요.")
-    elif memo_rate > 0:
-        lines.append(f"아직 메모가 **{stats['memo_count']}개**밖에 없어요. 틀린 이유를 한 줄이라도 적어보세요.")
-    else:
-        lines.append("아직 메모를 한 개도 작성하지 않았어요. 메모가 복습의 핵심이에요!")
+    # 실제 질문 내용 (전부)
+    if quotes:
+        lines.append("\n[AI 토론에서 학생이 한 질문]")
+        for q in quotes:
+            lines.append(f'  - "{q}"')
 
-    # AI 토론
-    if chat_sessions == 0:
-        lines.append("아직 AI 토론은 활용하지 않았어요.")
-    elif chat_sessions <= 2:
-        lines.append(f"**{chat_sessions}개** 문제에서 AI와 토론했어요.")
-    else:
-        lines.append(f"**{chat_sessions}개** 문제에서 AI와 토론했어요. 적극적으로 활용하고 있네요! 🎯")
-
-    # 활동 기간
-    if first and last and first != last:
-        lines.append(f"첫 기록은 **{first}**, 가장 최근은 **{last}** — **{active_days}일**에 걸쳐 학습했어요.")
-    elif active_days == 1:
-        lines.append(f"오늘 하루 집중적으로 기록했어요.")
-
-    return "\n\n".join(lines)
+    return "\n".join(lines) if lines else "(아직 메모와 질문 내용이 없습니다)"
 
 
-def _build_advice(stats: dict, concepts: list) -> str:
-    total = stats["total"]
-    memo_rate = stats["memo_rate"]
-    chat_sessions = stats["chat_sessions"]
+def _call_gemini(data_section: str) -> tuple[str, str]:
+    """Gemini 호출 → (ai_pattern, ai_advice) 반환."""
+    from services.ai import llm, _normalize_math
+    from langchain_core.messages import HumanMessage
 
-    tips = []
+    prompt = _AI_PROMPT.format(data=data_section)
+    response = llm.invoke([HumanMessage(content=prompt)])
+    raw = response.content
+    if isinstance(raw, list):
+        raw = "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in raw)
 
-    if memo_rate < 30:
-        tips.append("틀린 문제마다 메모 한 줄을 목표로 해보세요. '왜 틀렸는지' 한 문장만으로도 충분해요.")
+    # JSON 파싱
+    try:
+        m = re.search(r'\{[\s\S]*\}', raw)
+        obj = json.loads(m.group()) if m else {}
+        pattern = _normalize_math(obj.get("pattern", "").strip())
+        advice  = _normalize_math(obj.get("advice",  "").strip())
+    except Exception:
+        pattern = _normalize_math(raw.strip())
+        advice  = ""
 
-    if chat_sessions == 0 and total >= 3:
-        tips.append("AI 토론 기능을 아직 써보지 않았어요. 어려운 문제 하나를 골라 AI와 대화해보세요. 이해가 훨씬 빨라져요.")
-
-    if concepts:
-        top = concepts[0][0]
-        tips.append(f"**{top}** 관련 내용이 가장 자주 등장했어요. 해당 개념을 집중적으로 복습해보세요.")
-
-    if memo_rate >= 70 and chat_sessions >= 3:
-        tips.append("메모도 꾸준히 하고 AI 토론도 잘 활용하고 있어요. 이 페이스를 유지하면서 틀린 문제를 주기적으로 다시 풀어보세요.")
-
-    if not tips:
-        tips.append("꾸준히 오답노트를 관리하는 것 자체가 훌륭한 학습 전략이에요. 지금처럼 계속해봐요!")
-
-    return "\n\n".join(tips)
+    return pattern, advice
 
 
-# ─── 메인 함수 ───────────────────────────────────────────────────
-def generate_report(user_id: int) -> dict:
-    """학습일지 보고서 생성. 섹션별 딕셔너리 반환."""
-    raw = _get_raw_data(user_id)
+# ─── 메인 ────────────────────────────────────────────────────────
+def generate_report(user_id: int, regenerate: bool = False) -> dict:
+    """통합 학습일지 보고서.
+    - 통계·개념·인용: 항상 최신 계산
+    - AI 분석: DB 캐시 우선, regenerate=True 이면 재생성 후 저장
+    """
+    raw       = _get_raw_data(user_id)
     notebooks = raw["notebooks"]
-    chats_by_session = raw["chats_by_session"]
+    chats     = raw["chats_by_session"]
 
     if not notebooks:
         return {
@@ -250,17 +204,34 @@ def generate_report(user_id: int) -> dict:
             "message": "아직 오답노트에 기록된 문제가 없어요. 모의고사를 풀고 틀린 문제를 추가해보세요!",
         }
 
-    stats = _calc_stats(notebooks, chats_by_session)
-    all_text = _collect_text(notebooks, chats_by_session)
-    concepts = _extract_concepts(all_text)
-    quotes = _extract_student_quotes(chats_by_session)
+    stats          = _calc_stats(notebooks, chats)
+    text           = _collect_text(notebooks, chats)
+    concepts       = _extract_concepts(text)
+    quotes_display = _extract_student_quotes_for_display(chats)   # 화면 표시용 (5개)
+    quotes_all     = _extract_student_quotes(chats)               # AI 분석용 (전체)
+
+    # AI 분석: 캐시 확인
+    cached = get_learning_report(user_id)
+    if cached and not regenerate:
+        ai_pattern   = cached["ai_pattern"]
+        ai_advice    = cached["ai_advice"]
+        ai_generated = cached["generated_at"][:16]
+        ai_is_cached = True
+    else:
+        data_section = _build_data_section(stats, concepts, quotes_all, notebooks)
+        ai_pattern, ai_advice = _call_gemini(data_section)
+        save_learning_report(user_id, ai_pattern, ai_advice)
+        ai_generated = datetime.now().strftime("%Y-%m-%d %H:%M")
+        ai_is_cached = False
 
     return {
-        "has_data": True,
+        "has_data":     True,
         "generated_at": datetime.now().strftime("%Y년 %m월 %d일"),
-        "stats": stats,
-        "overview": _build_overview(stats),
-        "concepts": concepts,          # [(이름, 횟수), ...]
-        "quotes": quotes,              # [문장, ...]
-        "advice": _build_advice(stats, concepts),
+        "ai_generated": ai_generated,
+        "ai_is_cached": ai_is_cached,
+        "stats":        stats,
+        "concepts":     concepts,
+        "quotes":       quotes_display,
+        "ai_pattern":   ai_pattern,
+        "ai_advice":    ai_advice,
     }

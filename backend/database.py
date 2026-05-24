@@ -106,6 +106,15 @@ def init_db():
             FOREIGN KEY (notebook_session_id) REFERENCES sessions(id),
             UNIQUE(user_id, notebook_session_id)
         );
+
+        CREATE TABLE IF NOT EXISTS learning_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL UNIQUE,
+            ai_pattern TEXT NOT NULL DEFAULT '',
+            ai_advice  TEXT NOT NULL DEFAULT '',
+            generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
     """)
     # 기존 DB 마이그레이션 (컬럼 없을 때만 추가)
     migrations = [
@@ -457,6 +466,31 @@ def get_notebook_chat(user_id: int, notebook_session_id: int) -> list:
     ).fetchone()
     conn.close()
     return json.loads(row["messages"]) if row else []
+
+
+def get_learning_report(user_id: int) -> dict | None:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT ai_pattern, ai_advice, generated_at FROM learning_reports WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def save_learning_report(user_id: int, ai_pattern: str, ai_advice: str):
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO learning_reports (user_id, ai_pattern, ai_advice, generated_at)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(user_id)
+           DO UPDATE SET ai_pattern = excluded.ai_pattern,
+                         ai_advice  = excluded.ai_advice,
+                         generated_at = CURRENT_TIMESTAMP""",
+        (user_id, ai_pattern, ai_advice),
+    )
+    conn.commit()
+    conn.close()
 
 
 def save_notebook_chat(user_id: int, notebook_session_id: int, messages: list):

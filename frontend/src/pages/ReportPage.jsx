@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
-import { getReport } from '../api/report'
+import { getReport, regenerateReport } from '../api/report'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import QuizModal from '../components/QuizModal'
 
-// 개념 빈도 바 (최대값 기준 상대 너비)
 function ConceptBar({ name, count, max }) {
   const pct = max > 0 ? Math.round((count / max) * 100) : 0
   return (
@@ -16,50 +16,79 @@ function ConceptBar({ name, count, max }) {
   )
 }
 
-// 섹션 카드
-function Section({ icon, title, children }) {
+function Section({ icon, title, children, aside }) {
   return (
     <div className="report-section">
       <div className="report-section-header">
         <span className="report-section-icon">{icon}</span>
         <span className="report-section-title">{title}</span>
+        {aside && <span className="report-section-aside">{aside}</span>}
       </div>
-      <div className="report-section-body">
-        {children}
-      </div>
+      <div className="report-section-body">{children}</div>
     </div>
   )
 }
 
 export default function ReportPage() {
-  const [report, setReport] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError]   = useState(null)
+  const [report, setReport]           = useState(null)
+  const [loading, setLoading]         = useState(true)
+  const [aiVisible, setAiVisible]     = useState(false)
+  const [aiLoading, setAiLoading]     = useState(false)
+  const [error, setError]             = useState(null)
+  const [showQuiz, setShowQuiz]       = useState(false)
 
-  const load = () => {
-    setLoading(true)
-    setError(null)
+  useEffect(() => {
     getReport()
       .then(res => setReport(res.data))
       .catch(() => setError('보고서를 불러오지 못했어요.'))
       .finally(() => setLoading(false))
+  }, [])
+
+  // AI 분석 요청 or 캐시 보기
+  const handleAiRequest = async () => {
+    if (aiVisible) { setAiVisible(false); return }
+
+    // 이미 캐시된 데이터 있으면 바로 보여줌
+    if (report?.ai_pattern) { setAiVisible(true); return }
+
+    // 없으면 Gemini 호출
+    setAiLoading(true)
+    try {
+      const res = await regenerateReport()
+      setReport(res.data)
+      setAiVisible(true)
+    } catch {
+      alert('AI 분석에 실패했어요.')
+    } finally {
+      setAiLoading(false)
+    }
   }
 
-  useEffect(() => { load() }, [])
+  const handleRegenerate = async () => {
+    if (!confirm('AI 분석을 다시 생성할까요?')) return
+    setAiLoading(true)
+    try {
+      const res = await regenerateReport()
+      setReport(res.data)
+      setAiVisible(true)
+    } catch {
+      alert('재생성에 실패했어요.')
+    } finally {
+      setAiLoading(false)
+    }
+  }
 
-  if (loading) return <p className="loading">학습일지 생성 중...</p>
+  if (loading) return <p className="loading">학습일지 불러오는 중...</p>
   if (error)   return <p className="loading">{error}</p>
-  if (!report?.has_data) {
-    return (
-      <div className="report-empty">
-        <p>📭</p>
-        <p>{report?.message}</p>
-      </div>
-    )
-  }
+  if (!report?.has_data) return (
+    <div className="report-empty">
+      <p>📭</p>
+      <p>{report?.message}</p>
+    </div>
+  )
 
-  const { generated_at, stats, overview, concepts, quotes, advice } = report
-  const maxConceptCount = concepts.length > 0 ? concepts[0][1] : 1
+  const { generated_at, ai_generated, ai_is_cached, stats, concepts, quotes, ai_pattern, ai_advice } = report
+  const maxCount = concepts?.length > 0 ? concepts[0][1] : 1
 
   return (
     <div className="report-page">
@@ -67,10 +96,9 @@ export default function ReportPage() {
       <div className="report-header">
         <h2 className="report-title">📋 학습일지</h2>
         <span className="report-date">{generated_at} 기준</span>
-        <button className="btn-report-refresh" onClick={load} title="새로고침">↺</button>
       </div>
 
-      {/* 숫자 요약 칩 */}
+      {/* 숫자 칩 */}
       <div className="report-chips">
         <div className="report-chip">
           <span className="chip-num">{stats.total}</span>
@@ -90,43 +118,69 @@ export default function ReportPage() {
         </div>
       </div>
 
-      {/* 전체 현황 */}
-      <Section icon="📊" title="전체 현황">
-        <MarkdownRenderer>{overview}</MarkdownRenderer>
-      </Section>
-
       {/* 자주 다룬 개념 */}
-      {concepts.length > 0 && (
+      {concepts?.length > 0 && (
         <Section icon="🏷️" title="자주 다룬 개념">
           <div className="report-concepts">
             {concepts.map(([name, count]) => (
-              <ConceptBar key={name} name={name} count={count} max={maxConceptCount} />
+              <ConceptBar key={name} name={name} count={count} max={maxCount} />
             ))}
           </div>
-          <p className="report-concepts-note">메모와 AI 토론에서 등장한 경제학 개념을 분석했어요.</p>
+          <p className="report-concepts-note">메모와 AI 토론에서 등장한 개념을 분석했어요.</p>
         </Section>
       )}
 
-      {/* 직접 했던 질문들 */}
-      {quotes.length > 0 && (
-        <Section icon="💬" title="직접 했던 질문들">
-          <ul className="report-quotes">
-            {quotes.map((q, i) => (
-              <li key={i} className="report-quote-item">
-                <span className="report-quote-mark">"</span>
-                {q}
-                <span className="report-quote-mark">"</span>
-              </li>
-            ))}
-          </ul>
-          <p className="report-concepts-note">AI 토론에서 직접 작성한 질문이에요.</p>
-        </Section>
-      )}
+      {/* 복습 퀴즈 버튼 */}
+      <button className="btn-quiz-start" onClick={() => setShowQuiz(true)}>
+        📝 오늘의 복습 퀴즈
+      </button>
 
-      {/* 학습 조언 */}
-      <Section icon="💡" title="학습 조언">
-        <MarkdownRenderer>{advice}</MarkdownRenderer>
-      </Section>
+      {showQuiz && <QuizModal onClose={() => setShowQuiz(false)} />}
+
+      {/* AI 분석 요청 버튼 */}
+      <div className="report-ai-request">
+        <button
+          className="btn-ai-request"
+          onClick={handleAiRequest}
+          disabled={aiLoading}
+        >
+          {aiLoading
+            ? '🤖 AI 분석 중...'
+            : aiVisible
+              ? '▲ AI 분석 접기'
+              : ai_pattern
+                ? '🤖 AI 분석 보기 ▼'
+                : '🤖 AI 분석 받기 ▼'}
+        </button>
+        {ai_is_cached && ai_generated && !aiLoading && (
+          <span className="report-ai-cached-note">{ai_generated} 분석됨</span>
+        )}
+      </div>
+
+      {/* AI 분석 패널 */}
+      {aiVisible && (
+        <div className="report-ai-panel">
+          {ai_pattern && (
+            <div className="report-ai-block">
+              <p className="report-ai-label">📊 학습 패턴</p>
+              <MarkdownRenderer>{ai_pattern}</MarkdownRenderer>
+            </div>
+          )}
+          {ai_advice && (
+            <div className="report-ai-block">
+              <p className="report-ai-label">💡 추천 학습 방향</p>
+              <MarkdownRenderer>{ai_advice}</MarkdownRenderer>
+            </div>
+          )}
+          <button
+            className="btn-report-regenerate"
+            onClick={handleRegenerate}
+            disabled={aiLoading}
+          >
+            {aiLoading ? 'AI 분석 중...' : '↺ 다시 분석하기'}
+          </button>
+        </div>
+      )}
     </div>
   )
 }
