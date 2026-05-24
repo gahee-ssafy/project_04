@@ -9,11 +9,11 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# CORS — React 개발 서버 허용
+# CORS — 개발 중 전체 허용 (배포 시 origins 제한 필요)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )

@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const client = axios.create({
-  baseURL: 'http://localhost:8000',
+  baseURL: `http://${window.location.hostname}:8000`,
 })
 
 // 요청마다 토큰 자동 첨부

@@ -95,6 +95,17 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id),
             FOREIGN KEY (problem_id) REFERENCES problems(id)
         );
+
+        CREATE TABLE IF NOT EXISTS notebook_chats (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            notebook_session_id INTEGER NOT NULL,
+            messages TEXT NOT NULL DEFAULT '[]',
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id),
+            FOREIGN KEY (notebook_session_id) REFERENCES sessions(id),
+            UNIQUE(user_id, notebook_session_id)
+        );
     """)
     # 기존 DB 마이그레이션 (컬럼 없을 때만 추가)
     migrations = [
@@ -354,7 +365,7 @@ def get_exam_rounds() -> list[dict]:
            FROM problems
            WHERE exam_year IS NOT NULL AND exam_round IS NOT NULL
            GROUP BY exam_year, exam_round
-           ORDER BY exam_year, exam_round""",
+           ORDER BY exam_year DESC, exam_round DESC""",
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
@@ -432,3 +443,31 @@ def auto_add_wrong_to_notebook(
     conn.commit()
     conn.close()
     return session_id
+
+
+# =============================================================
+# 오답노트 AI 토론 채팅 저장
+# =============================================================
+def get_notebook_chat(user_id: int, notebook_session_id: int) -> list:
+    import json
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT messages FROM notebook_chats WHERE user_id = ? AND notebook_session_id = ?",
+        (user_id, notebook_session_id),
+    ).fetchone()
+    conn.close()
+    return json.loads(row["messages"]) if row else []
+
+
+def save_notebook_chat(user_id: int, notebook_session_id: int, messages: list):
+    import json
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO notebook_chats (user_id, notebook_session_id, messages, updated_at)
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(user_id, notebook_session_id)
+           DO UPDATE SET messages = excluded.messages, updated_at = CURRENT_TIMESTAMP""",
+        (user_id, notebook_session_id, json.dumps(messages, ensure_ascii=False)),
+    )
+    conn.commit()
+    conn.close()

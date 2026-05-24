@@ -45,12 +45,49 @@ DEBATE_PROMPT = """당신은 경제학 토론 상대입니다.
 - 한국어로만 답변합니다.
 """
 
+NOTEBOOK_CHAT_PROMPT = """당신은 경제학 오답노트 튜터입니다. 학생이 틀린 문제를 스스로 이해할 수 있도록 돕습니다.
+
+## 응답 구조 (반드시 이 순서로)
+
+학생이 설명하면:
+1. **판별** — 학생의 설명이 맞는지 틀렸는지 명확하게 먼저 밝힌다.
+   - 맞으면: "맞아요!" / "정확해요!" 로 시작
+   - 틀리면: "아쉽게도 틀렸어요." / "조금 달라요." 로 시작
+   - 일부만 맞으면: "반은 맞고 반은 달라요." 로 시작
+2. **피드백** — 왜 맞는지 또는 어디서 틀렸는지 구체적으로 설명한다. 핵심 개념을 짚어준다.
+3. **확인 또는 심화** — 이해가 완전히 됐으면 아래 형식으로 메모 제안을 반드시 포함한다.
+   ```
+   📝 메모 제안: [한 줄 핵심 요약]
+   ```
+   아직 이해가 부족하면 딱 하나의 질문으로 다음 단계를 유도한다. (메모 제안 없음)
+
+## 금지 사항
+- 판별 없이 바로 설명하거나 질문만 던지지 마세요.
+- 학생 설명과 무관한 내용을 꺼내지 마세요.
+- 한 번에 여러 질문을 하지 마세요.
+- 3~5문장을 초과하지 마세요.
+
+## 기타
+- 수식은 LaTeX로 작성하세요. 인라인: $수식$, 블록: $$수식$$
+- 한국어로만 답변합니다.
+"""
+
 
 def _parse_content(response) -> str:
     content = response.content
     if isinstance(content, list):
-        return "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in content])
-    return content
+        text = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in content])
+    else:
+        text = content
+    return _normalize_math(text)
+
+
+def _normalize_math(text: str) -> str:
+    """Gemini가 \(...\) 또는 \[...\] 로 출력한 수식을 $...$, $$...$$ 로 변환."""
+    import re
+    text = re.sub(r'\\\[([\s\S]+?)\\\]', lambda m: f'$${m.group(1)}$$', text)
+    text = re.sub(r'\\\(([\s\S]+?)\\\)', lambda m: f'${m.group(1)}$', text)
+    return text
 
 
 # =============================================================
@@ -100,6 +137,53 @@ def debate_reply(problem: str, solution: str, history: list, user_msg: str) -> s
             messages.append(AIMessage(content=turn["content"]))
 
     messages.append(HumanMessage(content=user_msg))
+    return _parse_content(llm.invoke(messages))
+
+
+# =============================================================
+# 오답노트 메모 기반 AI 토론
+# =============================================================
+def notebook_chat(question: str, memo: str, solution: str, history: list) -> str:
+    """메모를 읽고 소크라테스식 대화를 이어간다.
+    history가 비어있으면 AI가 먼저 말을 건다 (opener).
+    """
+    messages = [SystemMessage(content=NOTEBOOK_CHAT_PROMPT)]
+
+    # 문맥 주입
+    ctx_parts = [f"[문제]\n{question}"]
+    if solution:
+        ctx_parts.append(f"[AI 풀이]\n{solution}")
+    if memo:
+        ctx_parts.append(f"[학생 메모]\n{memo}")
+    messages.append(HumanMessage(content="\n\n".join(ctx_parts)))
+
+    if not history:
+        # opener: AI가 먼저 메모를 읽고 말 걸기
+        if memo:
+            opener = (
+                f"메모에 '{memo}' 라고 적어두셨군요. "
+                "좋아요, 그러면 이 문제에서 어떤 개념이 적용되는지, "
+                "본인의 말로 설명해보실 수 있을까요? "
+                "맞고 틀림을 바로 확인해드릴게요."
+            )
+        else:
+            opener = (
+                "이 문제를 틀리셨군요. "
+                "이 문제가 어떤 개념을 묻는 문제라고 생각하셨는지, "
+                "본인의 말로 먼저 설명해보세요. "
+                "맞는 부분과 틀린 부분을 바로 짚어드릴게요."
+            )
+        messages.append(AIMessage(content=opener))
+        return opener
+
+    # 이후 대화: history 이어 붙이기
+    messages.append(AIMessage(content=history[0]["content"]))  # opener
+    for turn in history[1:]:
+        if turn["role"] == "user":
+            messages.append(HumanMessage(content=turn["content"]))
+        else:
+            messages.append(AIMessage(content=turn["content"]))
+
     return _parse_content(llm.invoke(messages))
 
 

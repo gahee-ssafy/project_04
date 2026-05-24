@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getExamProblems, submitExam } from '../api/exam'
+import client from '../api/client'
 import MarkdownRenderer from '../components/MarkdownRenderer'
+import SolutionRenderer from '../components/SolutionRenderer'
 
 const PHASE = { SOLVING: 'solving', GRADING: 'grading', RESULT: 'result' }
 const CHOICES = ['①', '②', '③', '④', '⑤']
@@ -11,15 +13,19 @@ export default function ExamPage() {
   const { year, round } = useParams()
   const navigate = useNavigate()
 
-  const [problems, setProblems]   = useState([])
-  const [answers, setAnswers]     = useState({})   // { problem_id: '①'|'②'|... }
-  const [correct, setCorrect]     = useState({})   // { problem_id: bool|null }
-  const [current, setCurrent]     = useState(0)
-  const [phase, setPhase]         = useState(PHASE.SOLVING)
-  const [result, setResult]       = useState(null)
-  const [loading, setLoading]     = useState(true)
+  const [problems, setProblems]     = useState([])
+  const [answers, setAnswers]       = useState({})
+  const [correct, setCorrect]       = useState({})
+  const [current, setCurrent]       = useState(0)
+  const [phase, setPhase]           = useState(PHASE.SOLVING)
+  const [result, setResult]         = useState(null)
+  const [loading, setLoading]       = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showSolution, setShowSolution] = useState(false)
+  const [selected, setSelected]     = useState({}) // 오답노트 선택 { problem_id: bool }
+  const [saving, setSaving]         = useState(false)
+  const [saved, setSaved]           = useState(false)
+  const [expanded, setExpanded]     = useState({}) // 오답 이미지 펼치기 { problem_id: bool }
 
   useEffect(() => {
     getExamProblems(year, round)
@@ -32,26 +38,18 @@ export default function ExamPage() {
       .finally(() => setLoading(false))
   }, [year, round])
 
-  // 문제 이동 시 풀이 접기
   useEffect(() => { setShowSolution(false) }, [current])
 
-  // ── 풀이 완료 → 채점 단계 ────────────────────────────
   const goToGrading = () => {
-    // correct_answer 있는 문제는 자동 채점
     const initCorrect = {}
     problems.forEach((p) => {
-      if (p.correct_answer) {
-        initCorrect[p.id] = answers[p.id] === p.correct_answer
-      } else {
-        initCorrect[p.id] = null  // 수동 채점 필요
-      }
+      initCorrect[p.id] = p.correct_answer ? answers[p.id] === p.correct_answer : null
     })
     setCorrect(initCorrect)
     setPhase(PHASE.GRADING)
     setCurrent(0)
   }
 
-  // ── 최종 제출 ──────────────────────────────────────
   const handleSubmit = async () => {
     setSubmitting(true)
     try {
@@ -66,10 +64,37 @@ export default function ExamPage() {
       }
       const res = await submitExam(payload)
       setResult(res.data)
+      // 오답 기본 선택 초기화 (전부 미선택)
+      const initSel = {}
+      res.data.results.filter(r => !r.is_correct).forEach(r => { initSel[r.problem_id] = false })
+      setSelected(initSel)
       setPhase(PHASE.RESULT)
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleSaveNotebook = async () => {
+    const ids = Object.entries(selected).filter(([, v]) => v).map(([k]) => parseInt(k))
+    if (ids.length === 0) return
+    setSaving(true)
+    try {
+      await client.post('/exam/add-to-notebook', {
+        exam_year: parseInt(year),
+        exam_round: parseInt(round),
+        problem_ids: ids,
+      })
+      setSaved(true)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const toggleAll = (wrongItems) => {
+    const allSelected = wrongItems.every(r => selected[r.problem_id])
+    const next = {}
+    wrongItems.forEach(r => { next[r.problem_id] = !allSelected })
+    setSelected(prev => ({ ...prev, ...next }))
   }
 
   if (loading) return <p className="loading">문제를 불러오는 중...</p>
@@ -86,7 +111,6 @@ export default function ExamPage() {
 
     return (
       <div className="exam-page">
-        {/* 상단 */}
         <div className="exam-header">
           <span className="exam-title">{year}년 {round}회차</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -100,22 +124,16 @@ export default function ExamPage() {
           <div className="progress-fill" style={{ width: `${(answeredCount / total) * 100}%` }} />
         </div>
 
-        {/* 문제 카드 */}
         <div className="question-card">
           <p className="question-num">문제 {current + 1}</p>
           {prob.image_data ? (
-            <img
-              src={`data:${prob.image_mime};base64,${prob.image_data}`}
-              alt="문제 이미지"
-              className="question-img"
-            />
+            <img src={`data:${prob.image_mime};base64,${prob.image_data}`} alt="문제 이미지" className="question-img" />
           ) : (
             <p className="question-text">{prob.question}</p>
           )}
           <p className="question-meta">{prob.topic} · 난이도 {prob.difficulty}</p>
         </div>
 
-        {/* ①②③④⑤ 선택 버튼 */}
         <div className="choice-buttons">
           {CHOICES.map((ch, i) => (
             <button
@@ -128,23 +146,12 @@ export default function ExamPage() {
           ))}
         </div>
 
-        {/* 네비게이션 */}
         <div className="exam-nav">
-          <button className="btn-prev" onClick={() => setCurrent((c) => c - 1)} disabled={current === 0}>
-            ← 이전
-          </button>
-          {current < total - 1 ? (
-            <button className="btn-next" onClick={() => setCurrent((c) => c + 1)}>
-              다음 →
-            </button>
-          ) : (
-            <button className="btn-submit" onClick={goToGrading}>
-              채점하기
-            </button>
-          )}
+          <button className="btn-prev" onClick={() => setCurrent(c => c - 1)} disabled={current === 0}>← 이전</button>
+          <button className="btn-submit" onClick={goToGrading} disabled={answeredCount === 0}>채점하기</button>
+          <button className="btn-next" onClick={() => setCurrent(c => c + 1)} disabled={current === total - 1}>다음 →</button>
         </div>
 
-        {/* 문제 번호 점프 */}
         <div className="question-dots">
           {problems.map((p, i) => (
             <button
@@ -164,8 +171,7 @@ export default function ExamPage() {
   // 2단계: 채점
   // ═══════════════════════════════════════════════════
   if (phase === PHASE.GRADING) {
-    const gradedCount = Object.values(correct).filter((v) => v !== null).length
-    const allGraded   = gradedCount === total
+    const gradedCount = Object.values(correct).filter(v => v !== null).length
     const myAnswer    = answers[prob.id]
     const isAutoGraded = !!prob.correct_answer
 
@@ -181,25 +187,14 @@ export default function ExamPage() {
 
         <div className="grading-card">
           <p className="question-num">문제 {current + 1}</p>
-
-          {/* 문제 이미지 */}
           {prob.image_data ? (
-            <img
-              src={`data:${prob.image_mime};base64,${prob.image_data}`}
-              alt="문제 이미지"
-              className="question-img"
-            />
+            <img src={`data:${prob.image_mime};base64,${prob.image_data}`} alt="문제 이미지" className="question-img" />
           ) : (
             <p className="question-text">{prob.question}</p>
           )}
 
-          {/* 내 답 / 정답 표시 */}
           <div className="answer-compare">
-            <div className={`answer-box ${
-              isAutoGraded
-                ? correct[prob.id] ? 'box-correct' : 'box-wrong'
-                : ''
-            }`}>
+            <div className={`answer-box ${isAutoGraded ? (correct[prob.id] ? 'box-correct' : 'box-wrong') : ''}`}>
               <span className="answer-label">내 답</span>
               <span className="answer-val">{myAnswer || '(미선택)'}</span>
             </div>
@@ -211,70 +206,36 @@ export default function ExamPage() {
             )}
           </div>
 
-          {/* 수동 채점 (correct_answer 없는 경우) */}
           {!isAutoGraded && (
             <div className="grade-buttons">
-              <button
-                className={`btn-correct ${correct[prob.id] === true ? 'selected' : ''}`}
-                onClick={() => setCorrect({ ...correct, [prob.id]: true })}
-              >
-                ⭕ 맞았어요
-              </button>
-              <button
-                className={`btn-wrong ${correct[prob.id] === false ? 'selected' : ''}`}
-                onClick={() => setCorrect({ ...correct, [prob.id]: false })}
-              >
-                ❌ 틀렸어요
-              </button>
+              <button className={`btn-correct ${correct[prob.id] === true ? 'selected' : ''}`} onClick={() => setCorrect({ ...correct, [prob.id]: true })}>⭕ 맞았어요</button>
+              <button className={`btn-wrong ${correct[prob.id] === false ? 'selected' : ''}`} onClick={() => setCorrect({ ...correct, [prob.id]: false })}>❌ 틀렸어요</button>
             </div>
           )}
 
-          {/* 풀이 토글 */}
           {prob.solution && (
             <div className="solution-section">
-              <button
-                className="btn-toggle-solution"
-                onClick={() => setShowSolution((v) => !v)}
-              >
-                {showSolution ? '풀이 접기 ▲' : 'AI 풀이 보기 ▼'}
+              <button className="btn-toggle-solution" onClick={() => setShowSolution(v => !v)}>
+                {showSolution ? 'AI 풀이 접기 ▲' : 'AI 풀이 보기 ▼'}
               </button>
-              {showSolution && (
-                <div className="solution-body">
-                  <MarkdownRenderer>{prob.solution}</MarkdownRenderer>
-                </div>
-              )}
+              {showSolution && <div className="solution-body"><SolutionRenderer>{prob.solution}</SolutionRenderer></div>}
             </div>
           )}
         </div>
 
-        {/* 네비게이션 */}
         <div className="exam-nav">
-          <button className="btn-prev" onClick={() => setCurrent((c) => c - 1)} disabled={current === 0}>
-            ← 이전
+          <button className="btn-prev" onClick={() => setCurrent(c => c - 1)} disabled={current === 0}>← 이전</button>
+          <button className="btn-submit" onClick={handleSubmit} disabled={submitting}>
+            {submitting ? '제출 중...' : '결과 보기'}
           </button>
-          {current < total - 1 ? (
-            <button className="btn-next" onClick={() => setCurrent((c) => c + 1)}>
-              다음 →
-            </button>
-          ) : (
-            <button
-              className="btn-submit"
-              onClick={handleSubmit}
-              disabled={submitting}
-            >
-              {submitting ? '제출 중...' : '결과 보기'}
-            </button>
-          )}
+          <button className="btn-next" onClick={() => setCurrent(c => c + 1)} disabled={current === total - 1}>다음 →</button>
         </div>
 
         <div className="question-dots">
           {problems.map((p, i) => (
             <button
               key={p.id}
-              className={`dot ${i === current ? 'active' : ''} ${
-                correct[p.id] === true  ? 'correct' :
-                correct[p.id] === false ? 'wrong' : ''
-              }`}
+              className={`dot ${i === current ? 'active' : ''} ${correct[p.id] === true ? 'correct' : correct[p.id] === false ? 'wrong' : ''}`}
               onClick={() => setCurrent(i)}
             >
               {i + 1}
@@ -290,13 +251,20 @@ export default function ExamPage() {
   // ═══════════════════════════════════════════════════
   if (phase === PHASE.RESULT && result) {
     const score      = Math.round((result.correct / result.total) * 100)
-    const wrongItems = result.results.filter((r) => !r.is_correct)
+    const wrongItems = result.results.filter(r => !r.is_correct)
+    const selectedCount = Object.values(selected).filter(Boolean).length
+    const allSelected = wrongItems.length > 0 && wrongItems.every(r => selected[r.problem_id])
 
     return (
       <div className="exam-page">
         <div className="result-header">
           <h2>채점 결과</h2>
           <p>{year}년 {round}회차</p>
+        </div>
+
+        <div className="result-actions">
+          <button className="btn-notebook" onClick={() => navigate('/?tab=notebook')}>오답노트 보러 가기</button>
+          <button className="btn-retry" onClick={() => navigate('/')}>다른 회차 풀기</button>
         </div>
 
         <div className="score-card">
@@ -313,25 +281,57 @@ export default function ExamPage() {
 
         {wrongItems.length > 0 && (
           <div className="wrong-section">
-            <h3>오답노트에 자동 저장됐어요 ({wrongItems.length}개)</h3>
+            <div className="wrong-section-header">
+              <h3>오답 ({wrongItems.length}개)</h3>
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <button className="btn-select-all" onClick={() => toggleAll(wrongItems)}>
+                  {allSelected ? '전체 해제' : '전체 선택'}
+                </button>
+                {selectedCount > 0 && !saved && (
+                  <button className="btn-save-notebook" onClick={handleSaveNotebook} disabled={saving}>
+                    {saving ? '저장 중...' : `오답노트 저장 (${selectedCount}개)`}
+                  </button>
+                )}
+                {saved && <span className="saved-badge">저장 완료!</span>}
+              </div>
+            </div>
             <ul className="wrong-list">
-              {wrongItems.map((r) => (
-                <li key={r.problem_id} className="wrong-item">
-                  <p className="wrong-question">{r.question.slice(0, 60)}...</p>
-                </li>
-              ))}
+              {wrongItems.map((r, i) => {
+                const numMatch = r.question.match(/(\d+)번/)
+                const qNum = numMatch ? `${numMatch[1]}번` : `${i + 1}번`
+                const prob = problems.find(p => p.id === r.problem_id)
+                const isExpanded = !!expanded[r.problem_id]
+                return (
+                  <li
+                    key={r.problem_id}
+                    className={`wrong-item ${selected[r.problem_id] ? 'selected' : ''} ${isExpanded ? 'expanded' : ''}`}
+                    onClick={() => prob?.image_data && setExpanded(prev => ({ ...prev, [r.problem_id]: !prev[r.problem_id] }))}
+                  >
+                    <div className="wrong-row">
+                      <span className="wrong-num">{qNum}</span>
+                      <input
+                        type="checkbox"
+                        checked={!!selected[r.problem_id]}
+                        onChange={() => setSelected(prev => ({ ...prev, [r.problem_id]: !prev[r.problem_id] }))}
+                        onClick={e => e.stopPropagation()}
+                      />
+                    </div>
+                    {isExpanded && prob?.image_data && (
+                      <div className="wrong-img-expand">
+                        <img
+                          src={`data:${prob.image_mime};base64,${prob.image_data}`}
+                          alt={qNum}
+                          className="wrong-img-full"
+                        />
+                      </div>
+                    )}
+                  </li>
+                )
+              })}
             </ul>
           </div>
         )}
 
-        <div className="result-actions">
-          <button className="btn-notebook" onClick={() => navigate('/notebook')}>
-            오답노트 보러 가기
-          </button>
-          <button className="btn-retry" onClick={() => navigate('/exam')}>
-            다른 회차 풀기
-          </button>
-        </div>
       </div>
     )
   }

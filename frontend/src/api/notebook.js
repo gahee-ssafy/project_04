@@ -20,3 +20,15 @@ export const debate = (problem, solution, history, userMsg) =>
     history,
     user_msg: userMsg,
   })
+
+export const getNotebookChatHistory = (sessionId) =>
+  client.get(`/ai/notebook-chat/${sessionId}`)
+
+export const notebookChat = (sessionId, question, memo, solution, userMessage = '') =>
+  client.post('/ai/notebook-chat', {
+    session_id: sessionId,
+    question,
+    memo,
+    solution,
+    user_message: userMessage,
+  })

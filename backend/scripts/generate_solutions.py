@@ -48,9 +48,19 @@ SOLUTION_PROMPT = """이 경제학 기출문제 이미지를 분석해서 아래
 규칙:
 - 선지별 설명은 각 1문장 이내로 핵심만 작성하세요.
 - 정답 선지 앞에는 "정답." 을 붙이세요.
-- 수식은 LaTeX($...$)로 작성하세요.
+- 수식은 반드시 LaTeX 인라인($...$) 또는 블록($$...$$) 형식으로만 작성하세요.
+- \(...\) 또는 \[...\] 형식은 절대 사용하지 마세요.
 - [정답]과 [풀이] 외 다른 내용은 출력하지 마세요.
 - 한국어로만 답변하세요."""
+
+
+def normalize_math(text: str) -> str:
+    """Gemini가 \(...\) 또는 \[...\] 로 출력한 수식을 $...$, $$...$$ 로 변환."""
+    # \[...\] → $$...$$
+    text = re.sub(r'\\\[([\s\S]+?)\\\]', lambda m: f'$${m.group(1)}$$', text)
+    # \(...\) → $...$
+    text = re.sub(r'\\\(([\s\S]+?)\\\)', lambda m: f'${m.group(1)}$', text)
+    return text
 
 
 def parse_correct_answer(solution_text: str) -> str | None:
@@ -112,6 +122,7 @@ def generate(force: bool = False):
                     "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
                     if isinstance(content, list) else content
                 )
+                solution = normalize_math(solution)
                 correct_answer = parse_correct_answer(solution)
                 update_problem_solution(p['id'], solution, correct_answer)
 

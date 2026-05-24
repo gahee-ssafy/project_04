@@ -1,9 +1,10 @@
 import base64
 from fastapi import APIRouter, Depends, HTTPException
-from database import get_all_problems, save_session
+from pydantic import BaseModel
+from database import get_all_problems, save_session, get_notebook_chat, save_notebook_chat
 from dependencies import get_current_user
 from schemas.session import AskRequest
-from services.ai import ask
+from services.ai import ask, notebook_chat
 
 router = APIRouter()
 
@@ -19,6 +20,39 @@ def ask_question(req: AskRequest, user=Depends(get_current_user)):
     )
     session_id = save_session(user["id"], req.query, answer, img_bytes, req.image_mime)
     return {"answer": answer, "session_id": session_id}
+
+
+class NotebookChatRequest(BaseModel):
+    session_id: int
+    question: str
+    memo: str = ""
+    solution: str = ""
+    user_message: str = ""  # 비어있으면 opener 요청
+
+
+@router.get("/notebook-chat/{session_id}", summary="오답노트 채팅 기록 불러오기")
+def get_chat(session_id: int, user=Depends(get_current_user)):
+    history = get_notebook_chat(user["id"], session_id)
+    return {"history": history}
+
+
+@router.post("/notebook-chat", summary="오답노트 메모 기반 AI 토론")
+def notebook_chat_api(req: NotebookChatRequest, user=Depends(get_current_user)):
+    history = get_notebook_chat(user["id"], req.session_id)
+
+    reply = notebook_chat(req.question, req.memo, req.solution, history)
+
+    # 학생 메시지가 있으면 history에 추가 후 AI 응답도 저장
+    if req.user_message:
+        history.append({"role": "user", "content": req.user_message})
+        history.append({"role": "assistant", "content": reply})
+    else:
+        # opener: AI 첫 메시지만 저장
+        if not history:
+            history.append({"role": "assistant", "content": reply})
+
+    save_notebook_chat(user["id"], req.session_id, history)
+    return {"reply": reply, "history": history}
 
 
 @router.get("/solution/{problem_id}", summary="문제 풀이 조회 (미리 생성된 풀이)")
