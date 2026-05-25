@@ -22,21 +22,50 @@ export default function ExamPage() {
   const [loading, setLoading]       = useState(true)
   const [submitting, setSubmitting] = useState(false)
   const [showSolution, setShowSolution] = useState(false)
-  const [selected, setSelected]     = useState({}) // 오답노트 선택 { problem_id: bool }
+  const [selected, setSelected]     = useState({})
   const [saving, setSaving]         = useState(false)
   const [saved, setSaved]           = useState(false)
-  const [expanded, setExpanded]     = useState({}) // 오답 이미지 펼치기 { problem_id: bool }
+  const [expanded, setExpanded]     = useState({})
 
+  const STORAGE_KEY = `exam_progress_${year}_${round}`
+
+  // 문제 로드 + localStorage 복원
   useEffect(() => {
     getExamProblems(year, round)
       .then((res) => {
         setProblems(res.data)
         const init = {}
         res.data.forEach((p) => { init[p.id] = '' })
-        setAnswers(init)
+
+        const saved = localStorage.getItem(STORAGE_KEY)
+        if (saved) {
+          try {
+            const s = JSON.parse(saved)
+            setAnswers({ ...init, ...s.answers })
+            setCorrect(s.correct || {})
+            setCurrent(s.current || 0)
+            setPhase(s.phase || PHASE.SOLVING)
+            if (s.result) setResult(s.result)
+            if (s.selected) setSelected(s.selected)
+          } catch {
+            setAnswers(init)
+          }
+        } else {
+          setAnswers(init)
+        }
       })
       .finally(() => setLoading(false))
   }, [year, round])
+
+  // 상태 변경 시 localStorage 저장
+  useEffect(() => {
+    if (loading) return
+    if (phase === PHASE.RESULT && saved) {
+      localStorage.removeItem(STORAGE_KEY)
+      return
+    }
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ answers, correct, current, phase, result, selected }))
+  }, [answers, correct, current, phase, result, selected, loading])
 
   useEffect(() => { setShowSolution(false) }, [current])
 
@@ -77,6 +106,7 @@ export default function ExamPage() {
   const handleSaveNotebook = async () => {
     const ids = Object.entries(selected).filter(([, v]) => v).map(([k]) => parseInt(k))
     if (ids.length === 0) return
+    if (!confirm(`${ids.length}개의 문제를 오답노트에 저장할까요?`)) return
     setSaving(true)
     try {
       await client.post('/exam/add-to-notebook', {
@@ -85,6 +115,7 @@ export default function ExamPage() {
         problem_ids: ids,
       })
       setSaved(true)
+      localStorage.removeItem(STORAGE_KEY)
     } finally {
       setSaving(false)
     }

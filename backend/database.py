@@ -239,7 +239,7 @@ def get_sessions_with_memo(user_id: int) -> list[dict]:
            INNER JOIN memos m ON m.session_id = s.id AND m.user_id = s.user_id
            WHERE s.user_id = ?
              AND (m.memo != '' OR s.question LIKE '[오답노트]%' OR s.question LIKE '[모의고사]%')
-           ORDER BY m.updated_at DESC""",
+           ORDER BY s.created_at ASC""",
         (user_id,),
     ).fetchall()
     conn.close()
