@@ -126,6 +126,8 @@ def init_db():
         "ALTER TABLE problems  ADD COLUMN exam_year INTEGER",
         "ALTER TABLE problems  ADD COLUMN exam_round INTEGER",
         "ALTER TABLE memos     ADD COLUMN rating INTEGER DEFAULT 3",
+        "ALTER TABLE problems  ADD COLUMN concept TEXT",
+        "ALTER TABLE sessions  ADD COLUMN problem_id INTEGER",
     ]
     for sql in migrations:
         try:
@@ -435,13 +437,14 @@ def auto_add_wrong_to_notebook(
         image_data = base64.b64decode(problem["image_data"])
     conn = get_conn()
     cur = conn.execute(
-        "INSERT INTO sessions (user_id, question, answer, image_data, image_mime) VALUES (?, ?, ?, ?, ?)",
+        "INSERT INTO sessions (user_id, question, answer, image_data, image_mime, problem_id) VALUES (?, ?, ?, ?, ?, ?)",
         (
             user_id,
             f"[모의고사] {problem['question']}",
             problem.get("solution") or "",
             image_data,
             problem.get("image_mime"),
+            problem.get("id"),
         ),
     )
     session_id = cur.lastrowid

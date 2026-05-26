@@ -12,35 +12,83 @@ from database import get_conn, get_learning_report, save_learning_report
 
 # ─── 경제학 개념 사전 ────────────────────────────────────────────
 ECON_CONCEPTS = {
-    "수요": ["수요곡선", "수요량", "수요 변화", "수요가", "수요는", "수요를", "수요의"],
-    "공급": ["공급곡선", "공급량", "공급 변화", "공급가", "공급는", "공급를", "공급의"],
-    "탄력성": ["탄력성", "탄력적", "비탄력", "가격탄력"],
-    "GDP·국민소득": ["GDP", "국내총생산", "국민소득", "GNP", "경제성장률"],
-    "물가·인플레이션": ["물가", "인플레이션", "인플레", "CPI", "디플레이션", "디플레"],
-    "금리·이자율": ["금리", "이자율", "기준금리", "실질금리", "명목금리"],
-    "환율": ["환율", "절상", "절하", "평가절상", "평가절하", "달러"],
-    "재정정책": ["재정정책", "정부지출", "조세", "재정승수", "국채"],
-    "통화정책": ["통화정책", "통화량", "본원통화", "통화승수", "공개시장조작"],
-    "소비·저축": ["소비함수", "한계소비성향", "저축률", "가처분소득"],
-    "투자": ["투자함수", "한계효율", "투자승수", "가속도원리"],
-    "무역·국제수지": ["경상수지", "무역수지", "자본수지", "수출입"],
-    "비교우위": ["비교우위", "절대우위", "특화", "기회비용"],
-    "시장실패": ["시장실패", "외부효과", "공공재", "독점", "과점", "정보비대칭"],
-    "IS-LM": ["IS곡선", "LM곡선", "IS-LM", "유동성함정"],
-    "총수요·총공급": ["총수요", "총공급", "AD곡선", "AS곡선", "AD-AS"],
-    "필립스곡선": ["필립스곡선", "필립스 곡선"],
-    "케인즈": ["케인즈", "케인지안", "유효수요", "절약의 역설"],
-    "승수효과": ["승수효과", "지출승수", "세금승수", "균형재정승수"],
+    # ── 미시 기초 ──────────────────────────────────────────────────
+    "수요·공급": ["수요곡선", "수요량", "수요의", "수요 증가", "수요 감소",
+                  "공급곡선", "공급량", "공급의", "공급 증가", "공급 감소",
+                  "균형가격", "균형거래량", "초과수요", "초과공급"],
+    "탄력성": ["탄력성", "탄력적", "비탄력", "가격탄력", "소득탄력", "교차탄력"],
+    "소비자이론": ["한계대체율", "MRS", "무차별곡선", "예산제약", "효용극대화",
+                   "소비자잉여", "효용함수", "가격효과", "소득효과", "대체효과",
+                   "강단조성", "단조성", "보상변화", "대등변화", "현시선호", "추가 소득"],
+    "생산자이론": ["생산함수", "한계비용", "평균비용", "등량곡선", "등비용선",
+                   "MRTS", "생산자잉여", "규모의 경제", "규모수익", "손익분기",
+                   "한계생산", "MP_L", "MP_K", "오일러", "요소소득", "비용 제약"],
+    "시장구조": ["완전경쟁", "독점적 경쟁", "독점", "과점", "가격차별",
+                 "이윤극대화", "MR", "MC", "한계수입", "시장지배력"],
+    "시장실패": ["시장실패", "외부효과", "공공재", "정보비대칭", "역선택", "도덕적 해이",
+                 "보조금"],
+    "후생경제학": ["사회후생", "파레토", "칼도힉스", "사회후생함수", "배분 효율"],
+    "게임이론": ["게임이론", "내쉬균형", "우월전략", "죄수의 딜레마", "혼합전략",
+                 "순수전략", "용의자", "보수행렬", "무차별해지", "최적반응"],
+    "소득분배": ["지니계수", "로렌츠", "5분위", "10분위", "소득불평등", "빈곤율",
+                 "균등분배대등소득", "앳킨슨"],
+    "기대효용·위험": ["기대효용", "확실성등가", "위험기피", "위험프리미엄",
+                      "기대값", "위험중립", "위험선호"],
+    "채권·금융": ["채권", "이자수익", "자본손실", "채권수익률", "레버리지", "수익률"],
     "최저임금·가격규제": ["최저임금", "최고가격", "가격하한", "가격상한"],
+    "조세귀착": ["조세귀착", "조세부담", "경제적 순손실", "자중손실", "DWL"],
+
+    # ── 거시 기초 ──────────────────────────────────────────────────
+    "GDP·국민소득": ["GDP", "국내총생산", "국민소득", "GNP", "명목GDP", "실질GDP",
+                     "국민총소득", "경제성장률"],
+    "소비·저축": ["소비함수", "한계소비성향", "MPC", "저축률", "가처분소득", "절약의 역설"],
+    "투자": ["투자함수", "한계효율", "투자승수", "가속도원리", "토빈"],
+    "승수효과": ["승수효과", "지출승수", "세금승수", "균형재정승수", "재정승수"],
+    "IS-LM": ["IS곡선", "LM곡선", "IS-LM", "유동성함정", "구축효과"],
+    "총수요·총공급": ["총수요", "총공급", "AD곡선", "AS곡선", "AD-AS"],
+    "케인즈": ["케인즈", "케인지안", "유효수요"],
+    "물가·인플레이션": ["물가", "인플레이션", "인플레", "CPI", "디플레이션",
+                        "스태그플레이션", "물가상승률"],
+    "필립스곡선": ["필립스곡선", "필립스 곡선", "자연실업률", "기대인플레"],
+    "노동시장": ["실업률", "구직률", "실직률", "자연실업률", "마찰적 실업",
+                 "구조적 실업", "경기적 실업", "노동수요", "노동공급", "임금"],
+    "경제성장": ["솔로모형", "황금률", "저축률", "수렴가설", "내생적 성장",
+                 "자본축적", "1인당 자본", "균제상태"],
+    "금리·이자율": ["금리", "이자율", "기준금리", "실질금리", "명목금리", "피셔방정식"],
+    "재정정책": ["재정정책", "정부지출", "조세", "국채", "집행시차", "내부시차", "외부시차"],
+    "통화정책": ["통화정책", "통화량", "본원통화", "통화승수", "공개시장조작", "지급준비율"],
+
+    # ── 국제경제 ───────────────────────────────────────────────────
+    "환율": ["환율", "절상", "절하", "평가절상", "평가절하", "구매력평가",
+             "이자율평형", "J커브"],
+    "무역·국제수지": ["경상수지", "무역수지", "자본수지", "수출입", "국제수지"],
+    "비교우위": ["비교우위", "절대우위", "특화", "기회비용", "헥셔", "오린"],
 }
+
+# ─── 개념 태그 추출 (외부에서도 import 가능) ─────────────────────
+def extract_concept(text: str) -> str | None:
+    """해설·질문 텍스트에서 ECON_CONCEPTS 매칭 → 가장 많이 등장한 개념 반환."""
+    from collections import Counter
+    counts = Counter()
+    for concept, keywords in ECON_CONCEPTS.items():
+        for kw in keywords:
+            counts[concept] += text.count(kw)
+    hits = [(c, n) for c, n in counts.items() if n > 0]
+    if not hits:
+        return None
+    return max(hits, key=lambda x: x[1])[0]
+
 
 # ─── DB 조회 ─────────────────────────────────────────────────────
 def _get_raw_data(user_id: int) -> dict:
     conn = get_conn()
     notebook_rows = conn.execute(
-        """SELECT s.id, s.question, s.created_at, COALESCE(m.memo, '') AS memo
+        """SELECT s.id, s.question, s.created_at,
+                  COALESCE(m.memo, '') AS memo,
+                  COALESCE(p.concept, '') AS problem_concept
            FROM sessions s
            LEFT JOIN memos m ON m.session_id = s.id AND m.user_id = s.user_id
+           LEFT JOIN problems p ON p.id = s.problem_id
            WHERE s.user_id = ?
              AND (s.question LIKE '[오답노트]%' OR s.question LIKE '[모의고사]%')
            ORDER BY s.created_at ASC""",
@@ -91,18 +139,47 @@ def _calc_stats(notebooks: list, chats_by_session: dict) -> dict:
 
 # ─── 텍스트 수집 ─────────────────────────────────────────────────
 def _collect_text(notebooks, chats_by_session) -> str:
+    # 학생 직접 작성 메모
     parts = [n["memo"] for n in notebooks if n["memo"].strip()]
+    # AI 토론에서 학생 발화
     for msgs in chats_by_session.values():
         parts += [m["content"] for m in msgs if m.get("role") == "user"]
     return " ".join(parts)
 
 
 # ─── 개념 추출 ───────────────────────────────────────────────────
-def _extract_concepts(text: str) -> list[tuple[str, int]]:
+def _extract_concepts(notebooks: list, chats_by_session: dict = None) -> list[tuple[str, int]]:
     counts = Counter()
-    for concept, keywords in ECON_CONCEPTS.items():
-        for kw in keywords:
-            counts[concept] += text.count(kw)
+    chats_by_session = chats_by_session or {}
+
+    for n in notebooks:
+        concept = n.get("problem_concept", "")
+
+        # 개념 태그가 없는 항목(직접 추가 등)은 메모/질문 텍스트로 보완
+        if not concept:
+            combined = f"{n.get('question', '')} {n.get('memo', '')}"
+            best, best_n = None, 0
+            for c, keywords in ECON_CONCEPTS.items():
+                cnt = sum(combined.count(kw) for kw in keywords)
+                if cnt > best_n:
+                    best, best_n = c, cnt
+            concept = best
+
+        if not concept:
+            continue
+
+        # ① 오답노트에 있음 → +1
+        counts[concept] += 1
+
+        # ② 메모 작성 → +1 (길이 무관)
+        if n.get("memo", "").strip():
+            counts[concept] += 1
+
+        # ③ AI 토론 → 학생 메시지 수만큼 추가
+        session_msgs = chats_by_session.get(n["id"], [])
+        user_msg_count = sum(1 for m in session_msgs if m.get("role") == "user")
+        counts[concept] += user_msg_count
+
     result = [(c, n) for c, n in counts.items() if n > 0]
     result.sort(key=lambda x: -x[1])
     return result[:6]
@@ -205,8 +282,7 @@ def generate_report(user_id: int, regenerate: bool = False) -> dict:
         }
 
     stats          = _calc_stats(notebooks, chats)
-    text           = _collect_text(notebooks, chats)
-    concepts       = _extract_concepts(text)
+    concepts       = _extract_concepts(notebooks, chats)
     quotes_display = _extract_student_quotes_for_display(chats)   # 화면 표시용 (5개)
     quotes_all     = _extract_student_quotes(chats)               # AI 분석용 (전체)
 
