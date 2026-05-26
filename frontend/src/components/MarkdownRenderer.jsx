@@ -13,6 +13,8 @@ const NON_BREAK = /[^\s$.,!?;:()\[\]{}'"\d\n]/
  */
 function preprocessMath(text) {
   if (!text) return text
+  // ***, **, * 강조 기호 제거 (별표 그대로 보이는 문제 방지)
+  text = text.replace(/\*{1,3}(.*?)\*{1,3}/gs, '$1')
   const DOLLAR = '＄' // 전각 달러 — KaTeX에서 $ 처럼 보임
   let out = ''
   let i = 0

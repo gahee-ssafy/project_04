@@ -205,39 +205,81 @@ def _extract_student_quotes_for_display(chats_by_session: dict) -> list[str]:
 
 
 # ─── AI 프롬프트 ────────────────────────────────────────────────
-_AI_PROMPT = """아래는 한 학생이 경제학 오답노트에 직접 적은 메모와 AI 토론에서 한 질문들이에요.
+_AI_PROMPT = """아래는 한 학생의 경제학 학습 기록이에요.
 
 {data}
 
-이 내용만 보고 딱 두 가지를 JSON으로만 답해주세요. 다른 말은 절대 하지 마세요.
+JSON으로만 답해주세요. 다른 말은 절대 하지 마세요.
 
-규칙:
-- 반드시 위에 있는 내용(메모, 질문)만 근거로 삼으세요.
-- 없는 내용을 언급하거나 "메모가 없어요", "질문이 적어요" 같은 말은 절대 하지 마세요.
-- 말투: 친한 선배처럼 편하게. "~네요", "~하더라고요", "~해봐요" 같은 자연스러운 어투.
+공통 규칙:
+- 말투: 친한 선배처럼 편하게. "~네요", "~하더라고요", "~해봐요"
 - 딱딱한 강의체, 면책 문구, 인사말 금지.
 
 {{
-  "pattern": "위의 메모와 질문 내용을 근거로 이 학생의 학습 패턴을 2~3문장으로. 어떤 개념을 헷갈려하는지, 어떤 방식으로 이해하려는지 구체적으로.",
-  "advice": "100자 이내. 위 질문이나 메모 중 하나를 따옴표로 직접 인용해서 콕 집어 조언 1가지만."
+  "pattern": "학생이 다룬 개념이나 질문 하나하나를 언급하며 각각 1~2문장으로 노력을 구체적으로 칭찬하고 응원해줘요. 인용할 때는 따옴표만 사용하고 *, **, *** 같은 마크다운 기호는 절대 쓰지 마세요. 예: '- 수요·공급: 메모에 \"균형가격이 왜 이렇게 움직이지?\"라고 적어두셨던 거 기억나요? 그 의문 하나가 핵심을 찌른 거예요 💪\\n- IS-LM: \"구축효과가 직관적으로 안 잡혀요\"라고 세 번이나 물어보셨는데, 이렇게 포기 안 하는 사람이 결국 잡아요'. 3~5개 항목, 불릿 목록.",
+  "advice": "100자 이내. 메모나 질문 중 하나를 따옴표로 직접 인용해서 앞으로의 공부 방향 조언 1가지만. *, ** 같은 마크다운 기호 절대 금지."
 }}"""
 
 
-def _build_data_section(stats, concepts, quotes, notebooks) -> str:
+def _build_data_section(stats, concepts, quotes, notebooks, user_id: int) -> str:
     lines = []
 
-    # 실제 메모 내용 (전부)
+    # 전체 메모
     memos = [n["memo"].strip() for n in notebooks if n.get("memo", "").strip()]
     if memos:
         lines.append("[학생이 직접 작성한 메모]")
         for m in memos:
             lines.append(f'  - "{m}"')
 
-    # 실제 질문 내용 (전부)
+    # 전체 질문
     if quotes:
         lines.append("\n[AI 토론에서 학생이 한 질문]")
         for q in quotes:
             lines.append(f'  - "{q}"')
+
+    # 이번 주 요약
+    conn = get_conn()
+    wrong_rows = conn.execute(
+        """SELECT p.concept, COUNT(*) as cnt
+           FROM exam_attempts a JOIN problems p ON p.id = a.problem_id
+           WHERE a.user_id = ? AND a.is_correct = 0
+             AND a.created_at >= datetime('now', '-7 days')
+           GROUP BY p.concept ORDER BY cnt DESC LIMIT 3""",
+        (user_id,),
+    ).fetchall()
+    memo_cnt = conn.execute(
+        """SELECT COUNT(*) FROM memos m JOIN sessions s ON s.id = m.session_id
+           WHERE m.user_id = ? AND m.memo != ''
+             AND s.created_at >= datetime('now', '-7 days')""",
+        (user_id,),
+    ).fetchone()[0]
+    chat_rows = conn.execute(
+        """SELECT nc.messages FROM notebook_chats nc
+           JOIN sessions s ON s.id = nc.notebook_session_id
+           WHERE nc.user_id = ? AND s.created_at >= datetime('now', '-7 days')""",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+
+    chat_cnt = len(chat_rows)
+    chat_msg_cnt = sum(
+        sum(1 for m in json.loads(r[0]) if m.get("role") == "user")
+        for r in chat_rows
+    )
+
+    weekly_lines = []
+    if wrong_rows:
+        top = [f"{r[0]}({r[1]}번)" for r in wrong_rows if r[0]]
+        weekly_lines.append(f"틀린 개념: {', '.join(top)}")
+    if memo_cnt:
+        weekly_lines.append(f"메모 작성: {memo_cnt}개")
+    if chat_cnt:
+        weekly_lines.append(f"AI 토론: {chat_cnt}회({chat_msg_cnt}개 메시지)")
+
+    if weekly_lines:
+        lines.append("\n[이번 주 학습 기록]")
+        for wl in weekly_lines:
+            lines.append(f"  - {wl}")
 
     return "\n".join(lines) if lines else "(아직 메모와 질문 내용이 없습니다)"
 
@@ -253,7 +295,6 @@ def _call_gemini(data_section: str) -> tuple[str, str]:
     if isinstance(raw, list):
         raw = "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in raw)
 
-    # JSON 파싱
     try:
         m = re.search(r'\{[\s\S]*\}', raw)
         obj = json.loads(m.group()) if m else {}
@@ -289,13 +330,14 @@ def generate_report(user_id: int, regenerate: bool = False) -> dict:
 
     # AI 분석: 캐시 확인
     cached = get_learning_report(user_id)
+
     if cached and not regenerate:
         ai_pattern   = cached["ai_pattern"]
         ai_advice    = cached["ai_advice"]
         ai_generated = cached["generated_at"][:16]
         ai_is_cached = True
     else:
-        data_section = _build_data_section(stats, concepts, quotes_all, notebooks)
+        data_section = _build_data_section(stats, concepts, quotes_all, notebooks, user_id)
         ai_pattern, ai_advice = _call_gemini(data_section)
         save_learning_report(user_id, ai_pattern, ai_advice)
         ai_generated = datetime.now().strftime("%Y-%m-%d %H:%M")
@@ -312,3 +354,4 @@ def generate_report(user_id: int, regenerate: bool = False) -> dict:
         "ai_pattern":   ai_pattern,
         "ai_advice":    ai_advice,
     }
+

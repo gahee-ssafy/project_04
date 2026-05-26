@@ -128,6 +128,8 @@ def init_db():
         "ALTER TABLE memos     ADD COLUMN rating INTEGER DEFAULT 3",
         "ALTER TABLE problems  ADD COLUMN concept TEXT",
         "ALTER TABLE sessions  ADD COLUMN problem_id INTEGER",
+        "ALTER TABLE learning_reports ADD COLUMN weekly_message TEXT NOT NULL DEFAULT ''",
+        "ALTER TABLE learning_reports ADD COLUMN weekly_at DATETIME",
     ]
     for sql in migrations:
         try:
@@ -479,6 +481,30 @@ def get_learning_report(user_id: int) -> dict | None:
     ).fetchone()
     conn.close()
     return dict(row) if row else None
+
+
+def get_weekly_message(user_id: int) -> dict | None:
+    conn = get_conn()
+    row = conn.execute(
+        "SELECT weekly_message, weekly_at FROM learning_reports WHERE user_id = ?",
+        (user_id,),
+    ).fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
+def save_weekly_message(user_id: int, message: str):
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO learning_reports (user_id, ai_pattern, ai_advice, weekly_message, weekly_at)
+           VALUES (?, '', '', ?, CURRENT_TIMESTAMP)
+           ON CONFLICT(user_id)
+           DO UPDATE SET weekly_message = excluded.weekly_message,
+                         weekly_at = CURRENT_TIMESTAMP""",
+        (user_id, message),
+    )
+    conn.commit()
+    conn.close()
 
 
 def save_learning_report(user_id: int, ai_pattern: str, ai_advice: str):

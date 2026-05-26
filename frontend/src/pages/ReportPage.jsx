@@ -36,10 +36,12 @@ export default function ReportPage() {
   const [aiLoading, setAiLoading]     = useState(false)
   const [error, setError]             = useState(null)
   const [showQuiz, setShowQuiz]       = useState(false)
-
   useEffect(() => {
     getReport()
-      .then(res => setReport(res.data))
+      .then(res => {
+        setReport(res.data)
+        if (res.data?.ai_pattern) setAiVisible(true)  // 캐시 있으면 바로 펼침
+      })
       .catch(() => setError('보고서를 불러오지 못했어요.'))
       .finally(() => setLoading(false))
   }, [])
@@ -90,13 +92,66 @@ export default function ReportPage() {
   const { generated_at, ai_generated, ai_is_cached, stats, concepts, quotes, ai_pattern, ai_advice } = report
   const maxCount = concepts?.length > 0 ? concepts[0][1] : 1
 
+  // “…” / “…” 인용 부분을 굵은 기울임꼴로 변환 (따옴표 유지)
+  const formatAdvice = (text) =>
+    text
+      .replace(/“([^”\n]+)”/g, '“***$1***”') // “…” 곡따옴표
+      .replace(/”([^”\n]+)”/g, '”***$1***”')                          // “…” 직따옴표
+
   return (
     <div className="report-page">
+
       {/* 헤더 */}
       <div className="report-header">
         <h2 className="report-title">📋 학습일지</h2>
         <span className="report-date">{generated_at} 기준</span>
       </div>
+
+      {/* AI 분석 — 핵심 기능, 최상단 */}
+      <div className="report-ai-request">
+        <button
+          className="btn-ai-request"
+          onClick={handleAiRequest}
+          disabled={aiLoading}
+        >
+          {aiLoading
+            ? '🤖 AI 분석 중...'
+            : aiVisible
+              ? '▲ AI 분석 접기'
+              : ai_pattern
+                ? '🤖 AI 분석 보기 ▼'
+                : '🤖 AI 분석 받기 ▼'}
+        </button>
+        {ai_is_cached && ai_generated && !aiLoading && (
+          <span className="report-ai-cached-note">{ai_generated} 분석됨</span>
+        )}
+      </div>
+
+      {aiVisible && (
+        <div className="report-ai-panel">
+          {ai_pattern && (
+            <div className="report-ai-block-pattern">
+              <span className="report-ai-label">📊 학습 패턴</span>
+              <MarkdownRenderer>{formatAdvice(ai_pattern)}</MarkdownRenderer>
+            </div>
+          )}
+          {ai_advice && (
+            <div className="report-ai-block-advice">
+              <span className="report-ai-label">💡 추천 학습 방향</span>
+              <MarkdownRenderer>{formatAdvice(ai_advice)}</MarkdownRenderer>
+            </div>
+          )}
+          <div className="report-ai-footer">
+            <button
+              className="btn-report-regenerate"
+              onClick={handleRegenerate}
+              disabled={aiLoading}
+            >
+              {aiLoading ? '분석 중...' : '↺ 다시 분석하기'}
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* 숫자 칩 */}
       <div className="report-chips">
@@ -136,51 +191,6 @@ export default function ReportPage() {
       </button>
 
       {showQuiz && <QuizModal onClose={() => setShowQuiz(false)} />}
-
-      {/* AI 분석 요청 버튼 */}
-      <div className="report-ai-request">
-        <button
-          className="btn-ai-request"
-          onClick={handleAiRequest}
-          disabled={aiLoading}
-        >
-          {aiLoading
-            ? '🤖 AI 분석 중...'
-            : aiVisible
-              ? '▲ AI 분석 접기'
-              : ai_pattern
-                ? '🤖 AI 분석 보기 ▼'
-                : '🤖 AI 분석 받기 ▼'}
-        </button>
-        {ai_is_cached && ai_generated && !aiLoading && (
-          <span className="report-ai-cached-note">{ai_generated} 분석됨</span>
-        )}
-      </div>
-
-      {/* AI 분석 패널 */}
-      {aiVisible && (
-        <div className="report-ai-panel">
-          {ai_pattern && (
-            <div className="report-ai-block">
-              <p className="report-ai-label">📊 학습 패턴</p>
-              <MarkdownRenderer>{ai_pattern}</MarkdownRenderer>
-            </div>
-          )}
-          {ai_advice && (
-            <div className="report-ai-block">
-              <p className="report-ai-label">💡 추천 학습 방향</p>
-              <MarkdownRenderer>{ai_advice}</MarkdownRenderer>
-            </div>
-          )}
-          <button
-            className="btn-report-regenerate"
-            onClick={handleRegenerate}
-            disabled={aiLoading}
-          >
-            {aiLoading ? 'AI 분석 중...' : '↺ 다시 분석하기'}
-          </button>
-        </div>
-      )}
     </div>
   )
 }

@@ -798,6 +798,39 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
   gap: 20px;
 }
 
+/* 주간 메시지 카드 */
+.weekly-card {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 16px;
+  padding: 20px 24px;
+  margin-bottom: 16px;
+  min-height: 80px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.weekly-loading {
+  color: rgba(255,255,255,0.8);
+  font-size: 14px;
+}
+.weekly-message {
+  color: #fff;
+  font-size: 15px;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+.btn-weekly-regen {
+  align-self: flex-end;
+  background: rgba(255,255,255,0.2);
+  border: 1px solid rgba(255,255,255,0.4);
+  color: #fff;
+  border-radius: 20px;
+  padding: 4px 14px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.btn-weekly-regen:hover { background: rgba(255,255,255,0.3); }
+
 /* 헤더 */
 .report-header {
   display: flex;
@@ -967,21 +1000,24 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 }
 .btn-ai-request {
   flex: 1;
-  padding: 13px;
-  border: 1.5px dashed #a5b4fc;
-  border-radius: 12px;
-  background: #f5f3ff;
+  padding: 14px;
+  border: none;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #4f46e5, #7c3aed);
   cursor: pointer;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: #4f46e5;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: white;
+  letter-spacing: 0.01em;
+  box-shadow: 0 4px 14px rgba(79,70,229,.35);
   transition: all 0.15s;
 }
 .btn-ai-request:hover:not(:disabled) {
-  background: #ede9fe;
-  border-color: #818cf8;
+  opacity: 0.92;
+  box-shadow: 0 6px 18px rgba(79,70,229,.45);
+  transform: translateY(-1px);
 }
-.btn-ai-request:disabled { opacity: 0.6; cursor: default; }
+.btn-ai-request:disabled { opacity: 0.6; cursor: default; transform: none; }
 .report-ai-cached-note {
   font-size: 0.72rem;
   color: #aaa;
@@ -990,34 +1026,111 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 
 /* AI 분석 패널 */
 .report-ai-panel {
-  background: white;
-  border: 1px solid #e8e8e8;
-  border-radius: 14px;
-  padding: 18px;
-  box-shadow: 0 1px 4px rgba(0,0,0,.05);
+  background: linear-gradient(160deg, #fafaff 0%, #f3f0ff 100%);
+  border: 1px solid #ddd6fe;
+  border-radius: 18px;
+  padding: 20px;
+  box-shadow: 0 2px 12px rgba(79,70,229,.08);
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 20px;
 }
-.report-ai-block { }
+
+/* 학습 패턴 블록 */
+.report-ai-block-pattern {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
 .report-ai-label {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: #888;
-  margin-bottom: 6px;
-  letter-spacing: 0.02em;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #2563eb;
+  background: #ede9fe;
+  border-radius: 99px;
+  padding: 3px 12px;
+  letter-spacing: 0.04em;
+  align-self: flex-start;
+}
+
+/* 패턴 안 마크다운 스타일 */
+.report-ai-block-pattern .markdown-body {
+  font-size: 0.92rem;
+  line-height: 1.8;
+  color: #374151;
+}
+.report-ai-block-pattern .markdown-body ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.report-ai-block-pattern .markdown-body li {
+  background: white;
+  border: 1px solid #e9d5ff;
+  border-left: 4px solid #7c3aed;
+  border-radius: 0 10px 10px 0;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  line-height: 1.7;
+}
+.report-ai-block-pattern .markdown-body strong {
+  color: #4f46e5;
+  font-weight: 700;
+}
+.report-ai-block-pattern .markdown-body em,
+.report-ai-block-pattern .markdown-body strong em {
+  color: #2563eb;
+  font-style: italic;
+}
+.report-ai-block-advice .markdown-body em,
+.report-ai-block-advice .markdown-body strong em {
+  color: #2563eb;
+  font-style: italic;
+}
+
+/* 추천 학습 방향 블록 */
+.report-ai-block-advice {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.report-ai-block-advice .markdown-body {
+  font-size: 0.9rem;
+  line-height: 1.75;
+  color: #374151;
+}
+.report-ai-block-advice .markdown-body p { margin: 0; }
+
+/* 다시 분석 버튼 */
+.report-ai-footer {
+  display: flex;
+  justify-content: flex-end;
 }
 .btn-report-regenerate {
-  align-self: flex-start;
-  padding: 6px 14px;
-  border: 1px solid #ddd;
-  border-radius: 7px;
-  background: #fafafa;
+  padding: 7px 16px;
+  border: 1px solid #c4b5fd;
+  border-radius: 99px;
+  background: white;
   cursor: pointer;
   font-size: 0.78rem;
-  color: #666;
+  font-weight: 600;
+  color: #2563eb;
+  transition: all 0.15s;
 }
-.btn-report-regenerate:hover:not(:disabled) { background: #f0f0f0; }
+.btn-report-regenerate:hover:not(:disabled) {
+  background: #ede9fe;
+  border-color: #a78bfa;
+}
 .btn-report-regenerate:disabled { opacity: 0.5; cursor: default; }
 
 /* 복습 퀴즈 시작 버튼 */
