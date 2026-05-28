@@ -27,7 +27,6 @@ export default function ExamPage() {
   const [saving, setSaving]         = useState(false)
   const [saved, setSaved]           = useState(false)
   const [expanded, setExpanded]     = useState({})
-  const [showDrawing, setShowDrawing] = useState(false)
 
   const STORAGE_KEY = `exam_progress_${year}_${round}`
 
@@ -157,7 +156,7 @@ export default function ExamPage() {
           <div className="progress-fill" style={{ width: `${(answeredCount / total) * 100}%` }} />
         </div>
 
-        <div className="question-with-canvas">
+        <DrawingCanvas questionId={prob.id}>
           <div className="question-card">
             <p className="question-num">문제 {current + 1}</p>
             {prob.image_data ? (
@@ -167,8 +166,7 @@ export default function ExamPage() {
             )}
             <p className="question-meta">{prob.topic} · 난이도 {prob.difficulty}</p>
           </div>
-          {showDrawing && <DrawingCanvas questionId={prob.id} />}
-        </div>
+        </DrawingCanvas>
 
         <div className="choice-buttons">
           {CHOICES.map((ch, i) => (
@@ -180,15 +178,6 @@ export default function ExamPage() {
               {ch}
             </button>
           ))}
-        </div>
-
-        <div className="drawing-toggle-row">
-          <button
-            className={`btn-drawing-toggle ${showDrawing ? 'active' : ''}`}
-            onClick={() => setShowDrawing(v => !v)}
-          >
-            {showDrawing ? '필기 닫기' : '필기하기'}
-          </button>
         </div>
 
         <div className="exam-nav">

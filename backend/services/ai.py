@@ -143,9 +143,11 @@ def debate_reply(problem: str, solution: str, history: list, user_msg: str) -> s
 # =============================================================
 # 오답노트 메모 기반 AI 토론
 # =============================================================
-def notebook_chat(question: str, memo: str, solution: str, history: list) -> str:
+def notebook_chat(question: str, memo: str, solution: str, history: list,
+                  image_bytes: bytes = None, image_mime: str = None) -> str:
     """메모를 읽고 소크라테스식 대화를 이어간다.
     history가 비어있으면 AI가 먼저 말을 건다 (opener).
+    image_bytes가 있으면 학생 필기 이미지를 함께 전송.
     """
     messages = [SystemMessage(content=NOTEBOOK_CHAT_PROMPT)]
 
@@ -183,6 +185,15 @@ def notebook_chat(question: str, memo: str, solution: str, history: list) -> str
             messages.append(HumanMessage(content=turn["content"]))
         else:
             messages.append(AIMessage(content=turn["content"]))
+
+    # 마지막 학생 메시지 — 이미지가 있으면 멀티모달로 전송
+    if image_bytes:
+        img_b64 = base64.b64encode(image_bytes).decode("utf-8")
+        mime = image_mime or "image/png"
+        messages.append(HumanMessage(content=[
+            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{img_b64}"}},
+            {"type": "text", "text": "(학생이 필기한 내용입니다. 이 필기를 보고 이해도를 파악해서 피드백해주세요.)"},
+        ]))
 
     return _parse_content(llm.invoke(messages))
 

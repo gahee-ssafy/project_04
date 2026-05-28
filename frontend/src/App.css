@@ -347,6 +347,25 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 }
 .btn-chat-send:disabled { background: #ccc; cursor: not-allowed; }
 .btn-chat-send:not(:disabled):hover { background: #2d46d4; }
+.btn-capture-drawing {
+  background: #f5f3ef; border: 1.5px solid #e0ddd8; border-radius: 8px;
+  padding: 8px 10px; font-size: 1.1rem; cursor: pointer; flex-shrink: 0;
+  transition: background 0.15s;
+}
+.btn-capture-drawing:hover { background: #ece9e3; }
+.btn-capture-drawing.has-image { background: #fef3c7; border-color: #f59e0b; }
+.chat-image-preview {
+  position: relative; padding: 8px 16px 0;
+}
+.chat-image-preview img {
+  max-height: 120px; border-radius: 8px; border: 1.5px solid #e0ddd8;
+}
+.btn-remove-image {
+  position: absolute; top: 4px; right: 12px;
+  background: rgba(0,0,0,0.5); color: white; border: none;
+  border-radius: 50%; width: 20px; height: 20px; font-size: 0.7rem;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
 .btn-save-memo-suggestion {
   display: block; margin-top: 8px;
   background: #ebefff; color: #3D5AF1; border: 1px solid #c7d0ff;
@@ -601,64 +620,75 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 .dot.correct { background: #f0fdf4; border-color: #86efac; color: #16a34a; }
 .dot.wrong { background: #fff1f2; border-color: #fca5a5; color: #dc2626; }
 
-/* ── 필기 오버레이 ── */
-.drawing-toggle-row { margin-bottom: 12px; }
-.btn-drawing-toggle {
-  padding: 8px 20px;
-  border: 1.5px solid #ede8e0;
-  border-radius: 10px;
-  background: white;
-  font-size: 0.85rem;
-  font-weight: 600;
-  color: #666;
-  cursor: pointer;
-  transition: all 0.15s;
+/* ── 필기 캔버스 ── */
+
+/* 문제 콘텐츠 + 오른쪽 툴바 전체 래퍼 */
+.question-canvas-wrapper {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  margin-bottom: 16px;
 }
-.btn-drawing-toggle:hover { border-color: #ccc; background: #fafaf8; }
-.btn-drawing-toggle.active { border-color: #3D5AF1; color: #3D5AF1; background: #f0f3ff; }
 
-/* 문제 카드 + 캔버스 래퍼 */
-.question-with-canvas { position: relative; margin-bottom: 16px; }
+/* 왼쪽: 문제 콘텐츠 영역 (캔버스 오버레이 기준점) */
+.question-canvas-area {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+/* 캔버스 영역 안 카드의 여분 마진 제거 (정확한 오버레이를 위해) */
+.question-canvas-area .question-card { margin-bottom: 0; }
 
-/* 투명 캔버스 오버레이 */
-.drawing-overlay {
+/* 투명 캔버스 — 문제 이미지 위에 정확히 겹침 */
+.drawing-canvas-overlay {
   position: absolute;
   inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+  background: transparent;
+  z-index: 10;
   border-radius: 20px;
-  overflow: hidden;
+}
+
+/* 오른쪽 세로 툴바 */
+.drawing-toolbar-right {
   display: flex;
   flex-direction: column;
-  z-index: 10;
-}
-
-/* 플로팅 툴바 */
-.drawing-overlay-toolbar {
-  display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.92);
-  backdrop-filter: blur(8px);
-  border-bottom: 1px solid rgba(0,0,0,.06);
-  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px 6px;
+  background: #faf9f7;
+  border: 1px solid #e8e4de;
+  border-radius: 0 12px 12px 0;
+  width: 44px;
   flex-shrink: 0;
 }
+
 .drawing-tool-btn {
-  padding: 4px 12px;
+  width: 32px; height: 32px;
   border: 1.5px solid #e0dbd4;
-  border-radius: 7px;
+  border-radius: 8px;
   background: white;
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: #555;
+  font-size: 1rem;
   cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
   transition: all 0.12s;
+  padding: 0;
 }
-.drawing-tool-btn.active { border-color: #3D5AF1; color: #3D5AF1; background: #f0f3ff; }
+.drawing-tool-btn.active { border-color: #3D5AF1; background: #f0f3ff; }
+.drawing-tool-btn:hover { background: #f5f3ef; }
 
-.drawing-divider { width: 1px; height: 20px; background: #e5e0d8; margin: 0 2px; }
+/* 세로 구분선 */
+.drawing-divider-h {
+  width: 24px; height: 1px;
+  background: #e5e0d8;
+  margin: 2px 0;
+}
 
-.drawing-colors { display: flex; gap: 6px; align-items: center; }
+.drawing-colors-vert { display: flex; flex-direction: column; gap: 5px; align-items: center; }
 .drawing-color-btn {
   width: 18px; height: 18px; border-radius: 50%;
   border: 2px solid transparent; cursor: pointer;
@@ -666,9 +696,9 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 }
 .drawing-color-btn.active { border-color: #fff; outline: 2px solid #333; transform: scale(1.2); }
 
-.drawing-sizes { display: flex; gap: 6px; align-items: center; }
+.drawing-sizes-vert { display: flex; flex-direction: column; gap: 5px; align-items: center; }
 .drawing-size-btn {
-  width: 26px; height: 26px;
+  width: 28px; height: 28px;
   border: 1.5px solid #e0dbd4; border-radius: 6px; background: white;
   cursor: pointer; display: flex; align-items: center; justify-content: center;
   transition: all 0.12s;
@@ -676,23 +706,13 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 .drawing-size-btn.active { border-color: #3D5AF1; background: #f0f3ff; }
 
 .drawing-clear-btn {
-  margin-left: auto;
-  padding: 4px 12px;
-  border: 1.5px solid #fca5a5; border-radius: 7px;
-  background: white; font-size: 0.8rem; font-weight: 600;
-  color: #dc2626; cursor: pointer; transition: all 0.12s;
+  width: 32px; height: 32px;
+  border: 1.5px solid #fca5a5; border-radius: 8px;
+  background: white; font-size: 1rem;
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+  transition: all 0.12s; padding: 0;
 }
 .drawing-clear-btn:hover { background: #fff1f2; }
-
-/* 투명 캔버스 */
-.drawing-canvas-overlay {
-  flex: 1;
-  display: block;
-  width: 100%;
-  cursor: crosshair;
-  touch-action: none;
-  background: transparent;
-}
 
 /* ── 자기 채점 ── */
 .grading-card {

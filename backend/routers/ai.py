@@ -28,6 +28,8 @@ class NotebookChatRequest(BaseModel):
     memo: str = ""
     solution: str = ""
     user_message: str = ""  # 비어있으면 opener 요청
+    image_data: str = ""    # base64 필기 이미지 (선택)
+    image_mime: str = "image/png"
 
 
 @router.get("/notebook-chat/{session_id}", summary="오답노트 채팅 기록 불러오기")
@@ -40,11 +42,14 @@ def get_chat(session_id: int, user=Depends(get_current_user)):
 def notebook_chat_api(req: NotebookChatRequest, user=Depends(get_current_user)):
     history = get_notebook_chat(user["id"], req.session_id)
 
-    reply = notebook_chat(req.question, req.memo, req.solution, history)
+    img_bytes = base64.b64decode(req.image_data) if req.image_data else None
+    reply = notebook_chat(req.question, req.memo, req.solution, history,
+                          image_bytes=img_bytes, image_mime=req.image_mime or "image/png")
 
     # 학생 메시지가 있으면 history에 추가 후 AI 응답도 저장
-    if req.user_message:
-        history.append({"role": "user", "content": req.user_message})
+    if req.user_message or img_bytes:
+        msg_content = req.user_message or "(필기 전송)"
+        history.append({"role": "user", "content": msg_content, "has_image": bool(img_bytes)})
         history.append({"role": "assistant", "content": reply})
     else:
         # opener: AI 첫 메시지만 저장

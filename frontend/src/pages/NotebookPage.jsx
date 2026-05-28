@@ -2,6 +2,7 @@ import { useEffect, useState, useRef } from 'react'
 import { getNotebook, saveMemo, deleteNotebook, notebookChat, getNotebookChatHistory } from '../api/notebook'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import SolutionRenderer from '../components/SolutionRenderer'
+import DrawingCanvas from '../components/DrawingCanvas'
 
 export default function NotebookPage() {
   const [items, setItems]         = useState([])
@@ -313,7 +314,9 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
   const [chatHistory, setChatHistory] = useState([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
+  const [pendingImage, setPendingImage] = useState(null) // 캡처된 필기 이미지 base64
   const chatBottomRef = useRef(null)
+  const canvasRef = useRef(null)
   const hasMemo = !!item.memo
 
   // 문제가 바뀌면 채팅 초기화
@@ -347,14 +350,28 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
     }
   }
 
+  const captureDrawing = () => {
+    const dataUrl = canvasRef.current?.capture()
+    if (!dataUrl) return
+    // data:image/png;base64,... 에서 base64 부분만 추출
+    const b64 = dataUrl.split(',')[1]
+    setPendingImage(b64)
+  }
+
   const sendMessage = async () => {
     const msg = chatInput.trim()
-    if (!msg || chatLoading) return
-    setChatHistory(prev => [...prev, { role: 'user', content: msg }])
+    if (!msg && !pendingImage || chatLoading) return
+    const displayMsg = msg || '(필기 전송)'
+    setChatHistory(prev => [...prev, { role: 'user', content: displayMsg, has_image: !!pendingImage }])
     setChatInput('')
+    const imgToSend = pendingImage
+    setPendingImage(null)
     setChatLoading(true)
     try {
-      const res = await notebookChat(item.id, displayQ(item.question), item.memo || '', item.answer || '', msg)
+      const res = await notebookChat(
+        item.id, displayQ(item.question), item.memo || '', item.answer || '',
+        msg, imgToSend
+      )
       setChatHistory(res.data.history)
     } finally {
       setChatLoading(false)
@@ -368,15 +385,17 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
   // ── 왼쪽: 문제 영역 ─────────────────────────────────
   const QuestionPanel = (
     <div className="note-question-panel">
-      {item.image_data ? (
-        <img
-          src={`data:${item.image_mime};base64,${item.image_data}`}
-          alt="문제 이미지"
-          className="note-img"
-        />
-      ) : (
-        <p className="note-question">{displayQ(item.question)}</p>
-      )}
+      <DrawingCanvas ref={canvasRef} questionId={`note_${item.id}`}>
+        {item.image_data ? (
+          <img
+            src={`data:${item.image_mime};base64,${item.image_data}`}
+            alt="문제 이미지"
+            className="note-img"
+          />
+        ) : (
+          <p className="note-question">{displayQ(item.question)}</p>
+        )}
+      </DrawingCanvas>
       {item.answer && (
         <div className="note-solution-toggle">
           <button className="btn-toggle-solution" onClick={() => setShowSolution(v => !v)}>
@@ -518,16 +537,27 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
               )}
               <div ref={chatBottomRef} />
             </div>
+            {pendingImage && (
+              <div className="chat-image-preview">
+                <img src={`data:image/png;base64,${pendingImage}`} alt="필기 미리보기" />
+                <button className="btn-remove-image" onClick={() => setPendingImage(null)}>✕</button>
+              </div>
+            )}
             <div className="chat-input-row">
+              <button
+                className={`btn-capture-drawing ${pendingImage ? 'has-image' : ''}`}
+                onClick={captureDrawing}
+                title="필기 캡처해서 전송"
+              >✏️</button>
               <textarea
                 className="chat-input"
                 value={chatInput}
                 onChange={e => setChatInput(e.target.value)}
                 onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                placeholder="이해한 내용을 설명해보세요..."
+                placeholder="이해한 내용을 설명하거나 필기를 전송해보세요..."
                 rows={2}
               />
-              <button className="btn-chat-send" onClick={sendMessage} disabled={chatLoading || !chatInput.trim()}>
+              <button className="btn-chat-send" onClick={sendMessage} disabled={chatLoading || (!chatInput.trim() && !pendingImage)}>
                 전송
               </button>
             </div>
