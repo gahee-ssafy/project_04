@@ -6,7 +6,7 @@ OX 복습 퀴즈 서비스
 import re
 import base64
 import random
-from database import get_conn
+from database import get_conn, get_quiz_stats
 from services.report import ECON_CONCEPTS
 
 CHOICE_RE = re.compile(r'^([①②③④⑤])\s*(.*)')
@@ -130,8 +130,38 @@ def generate_quiz(user_id: int) -> list[dict]:
                 "is_correct":   c['is_correct'],
             })
 
-    random.shuffle(items)
-    return items[:15]   # 최대 15문제
+    if not items:
+        return []
+
+    # 과거 결과 기반 가중치: 틀릴수록 더 자주 출제
+    stats = get_quiz_stats(user_id)
+    def weight(item):
+        s = stats.get(item["id"], {})
+        wrong   = s.get("wrong",   0)
+        correct = s.get("correct", 0)
+        # 한 번도 안 풀면 2, 틀릴수록 +3, 맞출수록 -1 (최소 1)
+        return max(1, 2 + wrong * 3 - correct)
+
+    weights = [weight(i) for i in items]
+    k = min(15, len(items))
+    selected = random.choices(items, weights=weights, k=k)
+
+    # 중복 제거 (같은 문제가 여러 번 뽑힐 수 있으므로)
+    seen, result = set(), []
+    for item in selected:
+        if item["id"] not in seen:
+            seen.add(item["id"])
+            result.append(item)
+    # 중복 제거 후 15개 미만이면 나머지 채우기
+    if len(result) < k:
+        for item in items:
+            if item["id"] not in seen:
+                seen.add(item["id"])
+                result.append(item)
+                if len(result) >= k:
+                    break
+
+    return result
 
 
 def get_related_problem(ox_text: str) -> dict | None:

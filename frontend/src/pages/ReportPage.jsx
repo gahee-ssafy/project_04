@@ -89,7 +89,7 @@ export default function ReportPage() {
     </div>
   )
 
-  const { generated_at, ai_generated, ai_is_cached, stats, concepts, quotes, ai_pattern, ai_advice } = report
+  const { generated_at, ai_generated, ai_is_cached, weekly_auto, stats, concepts, quotes, ai_pattern, ai_advice } = report
   const maxCount = concepts?.length > 0 ? concepts[0][1] : 1
 
   // “…” / “…” 인용 부분을 굵은 기울임꼴로 변환 (따옴표 유지)
@@ -100,6 +100,13 @@ export default function ReportPage() {
 
   return (
     <div className="report-page">
+
+      {/* 주간 자동 갱신 알림 */}
+      {weekly_auto && (
+        <div className="weekly-auto-banner">
+          📬 7일이 지나 이번 주 새 분석이 도착했어요!
+        </div>
+      )}
 
       {/* 헤더 */}
       <div className="report-header">

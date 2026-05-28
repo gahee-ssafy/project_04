@@ -17,8 +17,10 @@ export default function ExamListPage() {
 
   return (
     <div className="exam-list-page">
-      <h2>📚 모의고사</h2>
-      <p className="exam-desc">풀고 싶은 회차를 선택하세요.</p>
+      <div className="exam-list-header">
+        <h2>모의고사</h2>
+        <p className="exam-desc">풀고 싶은 회차를 선택하세요</p>
+      </div>
 
       {rounds.length === 0 ? (
         <div className="empty-box">

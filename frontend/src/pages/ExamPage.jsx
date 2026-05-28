@@ -4,10 +4,11 @@ import { getExamProblems, submitExam } from '../api/exam'
 import client from '../api/client'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import SolutionRenderer from '../components/SolutionRenderer'
+import DrawingCanvas from '../components/DrawingCanvas'
 
 const PHASE = { SOLVING: 'solving', GRADING: 'grading', RESULT: 'result' }
-const CHOICES = ['①', '②', '③', '④', '⑤']
-const CHOICE_VALS = ['①', '②', '③', '④', '⑤']
+const CHOICES = ['①', '②', '③', '④']
+const CHOICE_VALS = ['①', '②', '③', '④']
 
 export default function ExamPage() {
   const { year, round } = useParams()
@@ -26,6 +27,7 @@ export default function ExamPage() {
   const [saving, setSaving]         = useState(false)
   const [saved, setSaved]           = useState(false)
   const [expanded, setExpanded]     = useState({})
+  const [showDrawing, setShowDrawing] = useState(false)
 
   const STORAGE_KEY = `exam_progress_${year}_${round}`
 
@@ -155,14 +157,17 @@ export default function ExamPage() {
           <div className="progress-fill" style={{ width: `${(answeredCount / total) * 100}%` }} />
         </div>
 
-        <div className="question-card">
-          <p className="question-num">문제 {current + 1}</p>
-          {prob.image_data ? (
-            <img src={`data:${prob.image_mime};base64,${prob.image_data}`} alt="문제 이미지" className="question-img" />
-          ) : (
-            <p className="question-text">{prob.question}</p>
-          )}
-          <p className="question-meta">{prob.topic} · 난이도 {prob.difficulty}</p>
+        <div className="question-with-canvas">
+          <div className="question-card">
+            <p className="question-num">문제 {current + 1}</p>
+            {prob.image_data ? (
+              <img src={`data:${prob.image_mime};base64,${prob.image_data}`} alt="문제 이미지" className="question-img" />
+            ) : (
+              <p className="question-text">{prob.question}</p>
+            )}
+            <p className="question-meta">{prob.topic} · 난이도 {prob.difficulty}</p>
+          </div>
+          {showDrawing && <DrawingCanvas questionId={prob.id} />}
         </div>
 
         <div className="choice-buttons">
@@ -175,6 +180,15 @@ export default function ExamPage() {
               {ch}
             </button>
           ))}
+        </div>
+
+        <div className="drawing-toggle-row">
+          <button
+            className={`btn-drawing-toggle ${showDrawing ? 'active' : ''}`}
+            onClick={() => setShowDrawing(v => !v)}
+          >
+            {showDrawing ? '필기 닫기' : '필기하기'}
+          </button>
         </div>
 
         <div className="exam-nav">
@@ -304,9 +318,9 @@ export default function ExamPage() {
             <span className="score-unit">점</span>
           </div>
           <div className="score-detail">
-            <span className="score-correct">⭕ {result.correct}개</span>
-            <span className="score-wrong">❌ {result.wrong}개</span>
-            <span className="score-total">전체 {result.total}문제</span>
+            <span className="score-correct">✅ 정답 {result.correct}개</span>
+            <span className="score-wrong">❌ 오답 {result.wrong}개</span>
+            <span className="score-total">총 {result.total}문제</span>
           </div>
         </div>
 

@@ -1,12 +1,27 @@
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database import init_db
 from routers import auth, sessions, memo, problems, exam, ai, report, quiz
+from scheduler import create_scheduler
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # 시작
+    init_db()
+    scheduler = create_scheduler()
+    scheduler.start()
+    yield
+    # 종료
+    scheduler.shutdown()
+
 
 app = FastAPI(
     title="AI 경제학 튜터 API",
     description="기출문제 기반 모의고사 + 오답노트 + AI 토론 서비스",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS — 개발 중 전체 허용 (배포 시 origins 제한 필요)
@@ -17,9 +32,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-# DB 초기화 (앱 시작 시)
-init_db()
 
 # 라우터 등록
 app.include_router(auth.router,      prefix="/auth",      tags=["인증"])

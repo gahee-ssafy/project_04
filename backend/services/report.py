@@ -86,7 +86,8 @@ def _get_raw_data(user_id: int) -> dict:
     notebook_rows = conn.execute(
         """SELECT s.id, s.question, s.created_at,
                   COALESCE(m.memo, '') AS memo,
-                  COALESCE(p.concept, '') AS problem_concept
+                  COALESCE(p.concept, '') AS problem_concept,
+                  COALESCE(p.question_text, '') AS question_text
            FROM sessions s
            LEFT JOIN memos m ON m.session_id = s.id AND m.user_id = s.user_id
            LEFT JOIN problems p ON p.id = s.problem_id
@@ -156,9 +157,14 @@ def _extract_concepts(notebooks: list, chats_by_session: dict = None) -> list[tu
     for n in notebooks:
         concept = n.get("problem_concept", "")
 
-        # 개념 태그가 없는 항목(직접 추가 등)은 메모/질문 텍스트로 보완
+        # 개념 태그가 없는 항목(직접 추가 등)은 텍스트로 보완
+        # 우선순위: question_text(이미지문제 원문) > question > memo
         if not concept:
-            combined = f"{n.get('question', '')} {n.get('memo', '')}"
+            q_text = n.get("question_text", "").strip()
+            if q_text:
+                combined = q_text
+            else:
+                combined = f"{n.get('question', '')} {n.get('memo', '')}"
             best, best_n = None, 0
             for c, keywords in ECON_CONCEPTS.items():
                 cnt = sum(combined.count(kw) for kw in keywords)
@@ -214,10 +220,17 @@ JSON으로만 답해주세요. 다른 말은 절대 하지 마세요.
 공통 규칙:
 - 말투: 친한 선배처럼 편하게. "~네요", "~하더라고요", "~해봐요"
 - 딱딱한 강의체, 면책 문구, 인사말 금지.
+- *, **, *** 같은 마크다운 기호 절대 금지. 강조가 필요하면 따옴표만 사용.
+
+pattern 작성 예시 (이 톤과 구조를 그대로 따라주세요):
+- 조세론: "이윤세는 MC에 영향이 없으나, 종량세는 MC를 직접 상승시킨다"는 차이를 명확히 구분한 게 인상적이에요. 왜 MC가 변하지 않는지 스스로 질문하며 원리를 파고드는 모습에서 깊이 있는 고민이 느껴지네요.
+- 소비자 이론: "주관적 소비구조에 대한 설명이 없습니다"라며 문제의 전제 조건을 꼼꼼히 따져보는 예리함에 놀랐어요. 단순히 외우는 게 아니라 논리적으로 빈틈을 찾는 습관이 실력을 키워줄 거예요.
+- 노동 경제: "MRP_L(120-2L) = MFC_L(8L)" 수식을 직접 세워 정답을 도출해낸 걸 보니 복잡한 계산 문제도 이제 자신감이 붙은 것 같아 든든하네요.
+- 경제성장론: 솔로우 모형에서 기술진보를 "하늘에서 떨어진 벼락같은 것"이라고 비유한 표현이 너무 재치 있고 직관적이더라고요. 외생적 성장의 한계를 AK 모형과 비교하며 정리한 덕분에 거시경제학의 큰 줄기를 아주 잘 잡았어요.
 
 {{
-  "pattern": "학생이 다룬 개념이나 질문 하나하나를 언급하며 각각 1~2문장으로 노력을 구체적으로 칭찬하고 응원해줘요. 인용할 때는 따옴표만 사용하고 *, **, *** 같은 마크다운 기호는 절대 쓰지 마세요. 예: '- 수요·공급: 메모에 \"균형가격이 왜 이렇게 움직이지?\"라고 적어두셨던 거 기억나요? 그 의문 하나가 핵심을 찌른 거예요 💪\\n- IS-LM: \"구축효과가 직관적으로 안 잡혀요\"라고 세 번이나 물어보셨는데, 이렇게 포기 안 하는 사람이 결국 잡아요'. 3~5개 항목, 불릿 목록.",
-  "advice": "100자 이내. 메모나 질문 중 하나를 따옴표로 직접 인용해서 앞으로의 공부 방향 조언 1가지만. *, ** 같은 마크다운 기호 절대 금지."
+  "pattern": "위 예시와 같은 형식으로 학생 데이터 기반 3~5개 항목. 반드시 학생의 실제 메모나 질문을 따옴표로 인용할 것.",
+  "advice": "100자 이내. 메모나 질문 중 하나를 따옴표로 직접 인용해서 앞으로의 공부 방향 조언 1가지만."
 }}"""
 
 
@@ -311,7 +324,7 @@ def _call_gemini(data_section: str) -> tuple[str, str]:
 def generate_report(user_id: int, regenerate: bool = False) -> dict:
     """통합 학습일지 보고서.
     - 통계·개념·인용: 항상 최신 계산
-    - AI 분석: DB 캐시 우선, regenerate=True 이면 재생성 후 저장
+    - AI 분석: DB 캐시 우선 / regenerate=True 또는 스케줄러 호출 시 재생성
     """
     raw       = _get_raw_data(user_id)
     notebooks = raw["notebooks"]
@@ -325,10 +338,9 @@ def generate_report(user_id: int, regenerate: bool = False) -> dict:
 
     stats          = _calc_stats(notebooks, chats)
     concepts       = _extract_concepts(notebooks, chats)
-    quotes_display = _extract_student_quotes_for_display(chats)   # 화면 표시용 (5개)
-    quotes_all     = _extract_student_quotes(chats)               # AI 분석용 (전체)
+    quotes_display = _extract_student_quotes_for_display(chats)
+    quotes_all     = _extract_student_quotes(chats)
 
-    # AI 분석: 캐시 확인
     cached = get_learning_report(user_id)
 
     if cached and not regenerate:
@@ -336,18 +348,21 @@ def generate_report(user_id: int, regenerate: bool = False) -> dict:
         ai_advice    = cached["ai_advice"]
         ai_generated = cached["generated_at"][:16]
         ai_is_cached = True
+        weekly_auto  = False
     else:
         data_section = _build_data_section(stats, concepts, quotes_all, notebooks, user_id)
         ai_pattern, ai_advice = _call_gemini(data_section)
         save_learning_report(user_id, ai_pattern, ai_advice)
         ai_generated = datetime.now().strftime("%Y-%m-%d %H:%M")
         ai_is_cached = False
+        weekly_auto  = False  # 스케줄러에서 호출 시 True로 덮어씀
 
     return {
         "has_data":     True,
         "generated_at": datetime.now().strftime("%Y년 %m월 %d일"),
         "ai_generated": ai_generated,
         "ai_is_cached": ai_is_cached,
+        "weekly_auto":  weekly_auto,
         "stats":        stats,
         "concepts":     concepts,
         "quotes":       quotes_display,

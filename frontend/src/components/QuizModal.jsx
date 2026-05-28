@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { getQuiz, getRelatedProblem } from '../api/quiz'
+import { getQuiz, saveQuizAttempt, getRelatedProblem } from '../api/quiz'
 import MarkdownRenderer from './MarkdownRenderer'
 import SolutionRenderer from './SolutionRenderer'
 
@@ -45,6 +45,9 @@ export default function QuizModal({ onClose }) {
     const isCorrect = (userSaysO === q.is_correct)
     setAnswered(isCorrect ? 'correct' : 'wrong')
     if (isCorrect) setScore(s => s + 1)
+
+    // 결과 저장 (fire-and-forget)
+    saveQuizAttempt(q.id, isCorrect).catch(() => {})
 
     if (!isCorrect) {
       setRelatedLoading(true)

@@ -6,3 +6,4 @@ python-dotenv>=1.0.0
 langchain-google-genai>=1.0.0
 google-genai>=0.5.0
 langchain-core>=0.1.0
+apscheduler>=3.10.0

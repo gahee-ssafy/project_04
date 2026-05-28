@@ -115,6 +115,15 @@ def init_db():
             generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
+
+        CREATE TABLE IF NOT EXISTS quiz_attempts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            question_id TEXT NOT NULL,
+            is_correct INTEGER NOT NULL,
+            answered_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
     """)
     # 기존 DB 마이그레이션 (컬럼 없을 때만 추가)
     migrations = [
@@ -127,6 +136,7 @@ def init_db():
         "ALTER TABLE problems  ADD COLUMN exam_round INTEGER",
         "ALTER TABLE memos     ADD COLUMN rating INTEGER DEFAULT 3",
         "ALTER TABLE problems  ADD COLUMN concept TEXT",
+        "ALTER TABLE problems  ADD COLUMN question_text TEXT",
         "ALTER TABLE sessions  ADD COLUMN problem_id INTEGER",
         "ALTER TABLE learning_reports ADD COLUMN weekly_message TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE learning_reports ADD COLUMN weekly_at DATETIME",
@@ -137,6 +147,27 @@ def init_db():
             conn.commit()
         except sqlite3.OperationalError:
             pass
+
+    # learning_reports: user_id UNIQUE → 1:N 히스토리 구조로 마이그레이션
+    schema_row = conn.execute(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='learning_reports'"
+    ).fetchone()
+    if schema_row and "UNIQUE" in schema_row[0].upper():
+        conn.executescript("""
+            CREATE TABLE IF NOT EXISTS learning_reports_new (
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id      INTEGER NOT NULL,
+                ai_pattern   TEXT NOT NULL DEFAULT '',
+                ai_advice    TEXT NOT NULL DEFAULT '',
+                generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
+            INSERT INTO learning_reports_new (id, user_id, ai_pattern, ai_advice, generated_at)
+                SELECT id, user_id, ai_pattern, ai_advice, generated_at FROM learning_reports;
+            DROP TABLE learning_reports;
+            ALTER TABLE learning_reports_new RENAME TO learning_reports;
+        """)
+
     conn.commit()
     conn.close()
 
@@ -170,6 +201,13 @@ def get_user_by_credentials(username: str, password: str) -> dict | None:
     ).fetchone()
     conn.close()
     return row_to_dict(row)
+
+
+def get_all_user_ids() -> list[int]:
+    conn = get_conn()
+    rows = conn.execute("SELECT id FROM users").fetchall()
+    conn.close()
+    return [r["id"] for r in rows]
 
 
 def get_user_by_id(user_id: int) -> dict | None:
@@ -243,7 +281,7 @@ def get_sessions_with_memo(user_id: int) -> list[dict]:
            INNER JOIN memos m ON m.session_id = s.id AND m.user_id = s.user_id
            WHERE s.user_id = ?
              AND (m.memo != '' OR s.question LIKE '[오답노트]%' OR s.question LIKE '[모의고사]%')
-           ORDER BY s.created_at ASC""",
+           ORDER BY s.created_at DESC""",
         (user_id,),
     ).fetchall()
     conn.close()
@@ -404,6 +442,17 @@ def update_problem_embedding(problem_id: int, embedding_json: str):
     conn.close()
 
 
+def update_problem_question_text(problem_id: int, question_text: str):
+    """문제의 질문 텍스트를 저장 (이미지 문제 등에서 추출한 텍스트)."""
+    conn = get_conn()
+    conn.execute(
+        "UPDATE problems SET question_text = ? WHERE id = ?",
+        (question_text, problem_id),
+    )
+    conn.commit()
+    conn.close()
+
+
 # =============================================================
 # 모의고사
 # =============================================================
@@ -474,9 +523,11 @@ def get_notebook_chat(user_id: int, notebook_session_id: int) -> list:
 
 
 def get_learning_report(user_id: int) -> dict | None:
+    """가장 최신 학습일지 1개 반환."""
     conn = get_conn()
     row = conn.execute(
-        "SELECT ai_pattern, ai_advice, generated_at FROM learning_reports WHERE user_id = ?",
+        """SELECT ai_pattern, ai_advice, generated_at FROM learning_reports
+           WHERE user_id = ? ORDER BY generated_at DESC LIMIT 1""",
         (user_id,),
     ).fetchone()
     conn.close()
@@ -508,18 +559,44 @@ def save_weekly_message(user_id: int, message: str):
 
 
 def save_learning_report(user_id: int, ai_pattern: str, ai_advice: str):
+    """새 학습일지 row 추가 (1:N 히스토리)."""
     conn = get_conn()
     conn.execute(
         """INSERT INTO learning_reports (user_id, ai_pattern, ai_advice, generated_at)
-           VALUES (?, ?, ?, CURRENT_TIMESTAMP)
-           ON CONFLICT(user_id)
-           DO UPDATE SET ai_pattern = excluded.ai_pattern,
-                         ai_advice  = excluded.ai_advice,
-                         generated_at = CURRENT_TIMESTAMP""",
+           VALUES (?, ?, ?, CURRENT_TIMESTAMP)""",
         (user_id, ai_pattern, ai_advice),
     )
     conn.commit()
     conn.close()
+
+
+# =============================================================
+# OX 퀴즈 결과
+# =============================================================
+def save_quiz_attempt(user_id: int, question_id: str, is_correct: bool):
+    conn = get_conn()
+    conn.execute(
+        "INSERT INTO quiz_attempts (user_id, question_id, is_correct) VALUES (?, ?, ?)",
+        (user_id, question_id, int(is_correct)),
+    )
+    conn.commit()
+    conn.close()
+
+
+def get_quiz_stats(user_id: int) -> dict:
+    """question_id별 {wrong, correct} 집계."""
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT question_id,
+                  SUM(CASE WHEN is_correct=0 THEN 1 ELSE 0 END) AS wrong,
+                  SUM(CASE WHEN is_correct=1 THEN 1 ELSE 0 END) AS correct
+           FROM quiz_attempts
+           WHERE user_id = ?
+           GROUP BY question_id""",
+        (user_id,),
+    ).fetchall()
+    conn.close()
+    return {r["question_id"]: {"wrong": r["wrong"], "correct": r["correct"]} for r in rows}
 
 
 def save_notebook_chat(user_id: int, notebook_session_id: int, messages: list):
