@@ -69,7 +69,6 @@ ECON_CONCEPTS = {
 # ─── 개념 태그 추출 (외부에서도 import 가능) ─────────────────────
 def extract_concept(text: str) -> str | None:
     """해설·질문 텍스트에서 ECON_CONCEPTS 매칭 → 가장 많이 등장한 개념 반환."""
-    from collections import Counter
     counts = Counter()
     for concept, keywords in ECON_CONCEPTS.items():
         for kw in keywords:
@@ -193,8 +192,8 @@ def _extract_concepts(notebooks: list, chats_by_session: dict = None) -> list[tu
 
 
 # ─── 학생 직접 질문 추출 ─────────────────────────────────────────
-def _extract_student_quotes(chats_by_session: dict, limit_for_display: int = 5) -> list[str]:
-    """학생 질문 전체 추출. display용은 앞 5개만 쓰고, AI 분석용은 전체 반환."""
+def _extract_student_quotes(chats_by_session: dict) -> list[str]:
+    """학생 발화 전체 중복 제거 후 반환. display용은 앞 5개만 사용."""
     quotes, seen = [], set()
     for msgs in chats_by_session.values():
         for m in msgs:
@@ -204,10 +203,6 @@ def _extract_student_quotes(chats_by_session: dict, limit_for_display: int = 5) 
                     seen.add(text)
                     quotes.append(text)
     return quotes
-
-
-def _extract_student_quotes_for_display(chats_by_session: dict) -> list[str]:
-    return _extract_student_quotes(chats_by_session)[:5]
 
 
 # ─── AI 프롬프트 ────────────────────────────────────────────────
@@ -338,8 +333,8 @@ def generate_report(user_id: int, regenerate: bool = False) -> dict:
 
     stats          = _calc_stats(notebooks, chats)
     concepts       = _extract_concepts(notebooks, chats)
-    quotes_display = _extract_student_quotes_for_display(chats)
     quotes_all     = _extract_student_quotes(chats)
+    quotes_display = quotes_all[:5]
 
     cached = get_learning_report(user_id)
 

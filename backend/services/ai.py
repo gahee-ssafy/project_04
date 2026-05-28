@@ -34,17 +34,6 @@ TUTOR_PROMPT = """당신은 학생 옆에서 함께 문제를 보는 경제학 �
 항상 한국어로 답변합니다.
 """
 
-DEBATE_PROMPT = """당신은 경제학 토론 상대입니다.
-소크라테스식 문답으로 깊이 있는 논증을 이끌어냅니다.
-
-규칙:
-- 학생의 주장을 먼저 인정한 뒤, 논리적 허점이나 심화 질문을 던지세요.
-- 틀린 부분은 직접 지적하되 반문으로 유도하세요.
-- 학생이 옳으면 솔직히 인정하고 추가 개념을 연결하세요.
-- 모든 답변은 2-4문단, 마지막 문장은 반드시 질문으로 끝내세요.
-- 한국어로만 답변합니다.
-"""
-
 NOTEBOOK_CHAT_PROMPT = """당신은 경제학 오답노트 튜터입니다. 학생이 틀린 문제를 스스로 이해할 수 있도록 돕습니다.
 
 ## 응답 구조 (반드시 이 순서로)
@@ -118,25 +107,6 @@ def ask(
         human = HumanMessage(content=query)
 
     messages.append(human)
-    return _parse_content(llm.invoke(messages))
-
-
-# =============================================================
-# AI 토론
-# =============================================================
-def debate_reply(problem: str, solution: str, history: list, user_msg: str) -> str:
-    messages = [SystemMessage(content=DEBATE_PROMPT)]
-    ctx = f"[원래 문제]\n{problem}\n\n[AI 풀이]\n{solution}"
-    messages.append(HumanMessage(content=ctx))
-    messages.append(AIMessage(content="알겠습니다. 위 풀이를 기반으로 토론할 준비가 됐어요. 어떤 부분이 의문이신가요?"))
-
-    for turn in history:
-        if turn["role"] == "user":
-            messages.append(HumanMessage(content=turn["content"]))
-        else:
-            messages.append(AIMessage(content=turn["content"]))
-
-    messages.append(HumanMessage(content=user_msg))
     return _parse_content(llm.invoke(messages))
 
 

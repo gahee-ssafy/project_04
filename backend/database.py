@@ -1,3 +1,4 @@
+import json
 import sqlite3
 import hashlib
 import base64
@@ -512,7 +513,6 @@ def auto_add_wrong_to_notebook(
 # 오답노트 AI 토론 채팅 저장
 # =============================================================
 def get_notebook_chat(user_id: int, notebook_session_id: int) -> list:
-    import json
     conn = get_conn()
     row = conn.execute(
         "SELECT messages FROM notebook_chats WHERE user_id = ? AND notebook_session_id = ?",
@@ -532,30 +532,6 @@ def get_learning_report(user_id: int) -> dict | None:
     ).fetchone()
     conn.close()
     return dict(row) if row else None
-
-
-def get_weekly_message(user_id: int) -> dict | None:
-    conn = get_conn()
-    row = conn.execute(
-        "SELECT weekly_message, weekly_at FROM learning_reports WHERE user_id = ?",
-        (user_id,),
-    ).fetchone()
-    conn.close()
-    return dict(row) if row else None
-
-
-def save_weekly_message(user_id: int, message: str):
-    conn = get_conn()
-    conn.execute(
-        """INSERT INTO learning_reports (user_id, ai_pattern, ai_advice, weekly_message, weekly_at)
-           VALUES (?, '', '', ?, CURRENT_TIMESTAMP)
-           ON CONFLICT(user_id)
-           DO UPDATE SET weekly_message = excluded.weekly_message,
-                         weekly_at = CURRENT_TIMESTAMP""",
-        (user_id, message),
-    )
-    conn.commit()
-    conn.close()
 
 
 def save_learning_report(user_id: int, ai_pattern: str, ai_advice: str):
@@ -600,7 +576,6 @@ def get_quiz_stats(user_id: int) -> dict:
 
 
 def save_notebook_chat(user_id: int, notebook_session_id: int, messages: list):
-    import json
     conn = get_conn()
     conn.execute(
         """INSERT INTO notebook_chats (user_id, notebook_session_id, messages, updated_at)

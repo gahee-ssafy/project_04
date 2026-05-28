@@ -20,10 +20,7 @@ def run_weekly_reports():
 
     for user_id in user_ids:
         try:
-            result = generate_report(user_id, regenerate=True)
-            if result.get("has_data"):
-                # 스케줄러 자동 생성 플래그 설정
-                result["weekly_auto"] = True
+            generate_report(user_id, regenerate=True)
             logger.info(f"[주간 학습일지] user_id={user_id} 완료")
         except Exception as e:
             logger.error(f"[주간 학습일지] user_id={user_id} 실패: {e}")

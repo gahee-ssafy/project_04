@@ -13,14 +13,6 @@ export const deleteNotebook = (sessionId) =>
 export const saveMemo = (sessionId, memo) =>
   client.put(`/notebook/${sessionId}/memo`, { memo })
 
-export const debate = (problem, solution, history, userMsg) =>
-  client.post('/notebook/debate', {
-    problem,
-    solution,
-    history,
-    user_msg: userMsg,
-  })
-
 export const getNotebookChatHistory = (sessionId) =>
   client.get(`/ai/notebook-chat/${sessionId}`)
 

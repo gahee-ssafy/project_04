@@ -10,6 +10,31 @@ const PHASE = { SOLVING: 'solving', GRADING: 'grading', RESULT: 'result' }
 const CHOICES = ['①', '②', '③', '④']
 const CHOICE_VALS = ['①', '②', '③', '④']
 
+const STEPS = [
+  { key: PHASE.SOLVING,  label: '풀기' },
+  { key: PHASE.GRADING,  label: '채점' },
+  { key: PHASE.RESULT,   label: '결과' },
+]
+
+function ExamStepper({ phase }) {
+  const currentIdx = STEPS.findIndex(s => s.key === phase)
+  return (
+    <div className="exam-stepper">
+      {STEPS.map((step, i) => (
+        <div key={step.key} className="exam-step-item">
+          <div className={`exam-step-circle ${i < currentIdx ? 'done' : i === currentIdx ? 'active' : ''}`}>
+            {i < currentIdx ? '✓' : i + 1}
+          </div>
+          <span className={`exam-step-label ${i === currentIdx ? 'active' : ''}`}>{step.label}</span>
+          {i < STEPS.length - 1 && (
+            <div className={`exam-step-line ${i < currentIdx ? 'done' : ''}`} />
+          )}
+        </div>
+      ))}
+    </div>
+  )
+}
+
 export default function ExamPage() {
   const { year, round } = useParams()
   const navigate = useNavigate()
@@ -145,15 +170,28 @@ export default function ExamPage() {
       <div className="exam-page">
         <div className="exam-header">
           <span className="exam-title">{year}년 {round}회차</span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span className="exam-progress">{answeredCount} / {total} 답안 선택</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span className="exam-progress">{answeredCount}/{total}</span>
             {answeredCount > 0 && (
-              <button className="btn-stop" onClick={goToGrading}>여기까지 채점</button>
+              <button className="btn-stop" onClick={goToGrading}>채점</button>
             )}
           </div>
         </div>
+        <ExamStepper phase={phase} />
         <div className="progress-bar">
           <div className="progress-fill" style={{ width: `${(answeredCount / total) * 100}%` }} />
+        </div>
+
+        <div className="question-dots">
+          {problems.map((p, i) => (
+            <button
+              key={p.id}
+              className={`dot ${i === current ? 'active' : ''} ${answers[p.id] ? 'answered' : ''}`}
+              onClick={() => setCurrent(i)}
+            >
+              {i + 1}
+            </button>
+          ))}
         </div>
 
         <DrawingCanvas questionId={prob.id}>
@@ -185,18 +223,6 @@ export default function ExamPage() {
           <button className="btn-submit" onClick={goToGrading} disabled={answeredCount === 0}>채점하기</button>
           <button className="btn-next" onClick={() => setCurrent(c => c + 1)} disabled={current === total - 1}>다음 →</button>
         </div>
-
-        <div className="question-dots">
-          {problems.map((p, i) => (
-            <button
-              key={p.id}
-              className={`dot ${i === current ? 'active' : ''} ${answers[p.id] ? 'answered' : ''}`}
-              onClick={() => setCurrent(i)}
-            >
-              {i + 1}
-            </button>
-          ))}
-        </div>
       </div>
     )
   }
@@ -212,11 +238,24 @@ export default function ExamPage() {
     return (
       <div className="exam-page">
         <div className="exam-header">
-          <span className="exam-title">채점</span>
-          <span className="exam-progress">{gradedCount} / {total}</span>
+          <span className="exam-title">{year}년 {round}회차</span>
+          <span className="exam-progress">{gradedCount}/{total}</span>
         </div>
+        <ExamStepper phase={phase} />
         <div className="progress-bar">
           <div className="progress-fill grading" style={{ width: `${(gradedCount / total) * 100}%` }} />
+        </div>
+
+        <div className="question-dots">
+          {problems.map((p, i) => (
+            <button
+              key={p.id}
+              className={`dot ${i === current ? 'active' : ''} ${correct[p.id] === true ? 'correct' : correct[p.id] === false ? 'wrong' : ''}`}
+              onClick={() => setCurrent(i)}
+            >
+              {i + 1}
+            </button>
+          ))}
         </div>
 
         <div className="grading-card">
@@ -264,18 +303,6 @@ export default function ExamPage() {
           </button>
           <button className="btn-next" onClick={() => setCurrent(c => c + 1)} disabled={current === total - 1}>다음 →</button>
         </div>
-
-        <div className="question-dots">
-          {problems.map((p, i) => (
-            <button
-              key={p.id}
-              className={`dot ${i === current ? 'active' : ''} ${correct[p.id] === true ? 'correct' : correct[p.id] === false ? 'wrong' : ''}`}
-              onClick={() => setCurrent(i)}
-            >
-              {i + 1}
-            </button>
-          ))}
-        </div>
       </div>
     )
   }
@@ -291,25 +318,46 @@ export default function ExamPage() {
 
     return (
       <div className="exam-page">
+        <div className="exam-header">
+          <span className="exam-title">{year}년 {round}회차</span>
+          <span className="exam-progress">완료</span>
+        </div>
+        <ExamStepper phase={phase} />
         <div className="result-header">
-          <h2>채점 결과</h2>
-          <p>{year}년 {round}회차</p>
+
         </div>
 
         <div className="result-actions">
-          <button className="btn-notebook" onClick={() => navigate('/?tab=notebook')}>오답노트 보러 가기</button>
-          <button className="btn-retry" onClick={() => navigate('/')}>다른 회차 풀기</button>
+          <button className="btn-notebook" onClick={() => navigate('/?tab=notebook')}>오답노트</button>
+          <button className="btn-retry" onClick={() => {
+            const init = {}
+            problems.forEach((p) => { init[p.id] = '' })
+            setAnswers(init)
+            setCorrect({})
+            setSelected({})
+            setResult(null)
+            setSaved(false)
+            setCurrent(0)
+            setPhase(PHASE.SOLVING)
+            localStorage.removeItem(STORAGE_KEY)
+          }}>다시풀기</button>
+          <button className="btn-retry" onClick={() => navigate('/')}>다른회차</button>
         </div>
 
         <div className="score-card">
-          <div className="score-circle">
-            <span className="score-num">{score}</span>
-            <span className="score-unit">점</span>
-          </div>
-          <div className="score-detail">
-            <span className="score-correct">✅ 정답 {result.correct}개</span>
-            <span className="score-wrong">❌ 오답 {result.wrong}개</span>
-            <span className="score-total">총 {result.total}문제</span>
+          <div className="score-stats">
+            <div className="score-stat">
+              <span className="score-stat-num correct">{result.correct}</span>
+              <span className="score-stat-label">정답</span>
+            </div>
+            <div className="score-stat">
+              <span className="score-stat-num wrong">{result.wrong}</span>
+              <span className="score-stat-label">오답</span>
+            </div>
+            <div className="score-stat">
+              <span className="score-stat-num total">{result.total}</span>
+              <span className="score-stat-label">전체</span>
+            </div>
           </div>
         </div>
 

@@ -1,7 +1,8 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from pydantic import BaseModel
-from database import get_all_problems, update_problem_question_text
+from database import get_all_problems, get_conn, update_problem_question_text
 from dependencies import get_current_user
+from services.report import extract_concept
 
 router = APIRouter()
 
@@ -33,7 +34,6 @@ def set_question_text(
 
     update_problem_question_text(problem_id, body.question_text)
 
-    # concept 재태깅 (question_text 기반)
     concept = extract_concept(body.question_text)
     if concept:
         conn = get_conn()

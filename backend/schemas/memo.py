@@ -17,10 +17,3 @@ class NotebookAddRequest(BaseModel):
 class NotebookUpdateRequest(BaseModel):
     question: str
     answer: Optional[str] = ""
-
-
-class DebateRequest(BaseModel):
-    problem: str
-    solution: str
-    history: list = []
-    user_msg: str

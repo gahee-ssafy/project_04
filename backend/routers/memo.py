@@ -1,5 +1,5 @@
 import base64
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from database import (
     get_sessions_with_memo,
     save_memo,
@@ -8,8 +8,7 @@ from database import (
     delete_notebook_entry,
 )
 from dependencies import get_current_user
-from schemas.memo import MemoSaveRequest, NotebookAddRequest, NotebookUpdateRequest, DebateRequest
-from services.ai import debate_reply
+from schemas.memo import MemoSaveRequest, NotebookAddRequest, NotebookUpdateRequest
 
 router = APIRouter()
 
@@ -49,9 +48,3 @@ def update_notebook(session_id: int, req: NotebookUpdateRequest, user=Depends(ge
 def delete_notebook(session_id: int, user=Depends(get_current_user)):
     delete_notebook_entry(session_id, user["id"])
     return {"message": "삭제됐어요!"}
-
-
-@router.post("/debate", summary="AI 토론")
-def debate(req: DebateRequest, user=Depends(get_current_user)):
-    reply = debate_reply(req.problem, req.solution, req.history, req.user_msg)
-    return {"reply": reply}

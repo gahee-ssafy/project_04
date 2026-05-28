@@ -309,22 +309,26 @@ export default function NotebookPage() {
 function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
   const [memo, setMemo]           = useState(item.memo || '')
   const [editing, setEditing]     = useState(false)
+  const [showMemo, setShowMemo]   = useState(!!item.memo) // 메모 있으면 기본 펼침
   const [showSolution, setShowSolution] = useState(false)
   const [showChat, setShowChat]   = useState(false)
   const [chatHistory, setChatHistory] = useState([])
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
-  const [pendingImage, setPendingImage] = useState(null) // 캡처된 필기 이미지 base64
+  const [pendingImage, setPendingImage] = useState(null)
   const chatBottomRef = useRef(null)
   const canvasRef = useRef(null)
   const hasMemo = !!item.memo
 
-  // 문제가 바뀌면 채팅 초기화
+  // 문제가 바뀌면 초기화
   useEffect(() => {
     setShowChat(false)
     setChatHistory([])
     setChatInput('')
     setShowSolution(false)
+    setShowMemo(!!item.memo)
+    setEditing(false)
+    setMemo(item.memo || '')
   }, [item.id])
 
   const handleSave = async () => {
@@ -353,7 +357,6 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
   const captureDrawing = () => {
     const dataUrl = canvasRef.current?.capture()
     if (!dataUrl) return
-    // data:image/png;base64,... 에서 base64 부분만 추출
     const b64 = dataUrl.split(',')[1]
     setPendingImage(b64)
   }
@@ -382,27 +385,90 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
     chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chatHistory, chatLoading])
 
-  // ── 왼쪽: 문제 영역 ─────────────────────────────────
-  const QuestionPanel = (
-    <div className="note-question-panel">
-      <DrawingCanvas ref={canvasRef} questionId={`note_${item.id}`}>
-        {item.image_data ? (
-          <img
-            src={`data:${item.image_mime};base64,${item.image_data}`}
-            alt="문제 이미지"
-            className="note-img"
-          />
-        ) : (
-          <p className="note-question">{displayQ(item.question)}</p>
+  return (
+    <div className="note-card">
+      {/* 메타 */}
+      <div className="note-card-meta">
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span className="note-date">{item.created_at?.slice(0, 16)}</span>
+          {examTag && <span className="note-exam-tag">{examTag}</span>}
+        </div>
+        <button className="btn-delete-sm" onClick={() => onDelete(item.id)}>삭제</button>
+      </div>
+
+      {/* ① 문제 영역 */}
+      <div className="note-single-layout">
+        <div className="note-question-panel">
+          <DrawingCanvas ref={canvasRef} questionId={`note_${item.id}`}>
+            {item.image_data ? (
+              <img
+                src={`data:${item.image_mime};base64,${item.image_data}`}
+                alt="문제 이미지"
+                className="note-img"
+              />
+            ) : (
+              <p className="note-question">{displayQ(item.question)}</p>
+            )}
+          </DrawingCanvas>
+        </div>
+      </div>
+
+      {/* ② 메모 (접기/펼치기) */}
+      <div className="note-collapsible-section">
+        <button
+          className="note-section-toggle"
+          onClick={() => { setShowMemo(v => !v); if (!showMemo && !hasMemo) setEditing(true) }}
+        >
+          <span className="note-step-info">
+            <span className="note-step-badge">Step 1</span>
+            <span className="note-step-title">메모</span>
+            {!showMemo && !hasMemo && <span className="note-step-hint">모르는 내용을 적어보세요</span>}
+          </span>
+          <span className={`toggle-arrow ${showMemo ? 'open' : ''}`}>›</span>
+        </button>
+        {showMemo && (
+          <div className="note-memo-panel">
+            {editing ? (
+              <>
+                <textarea
+                  className="memo-textarea"
+                  value={memo}
+                  onChange={(e) => setMemo(e.target.value)}
+                  placeholder="핵심 개념, 오답 이유를 적어보세요."
+                  autoFocus
+                />
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button className="btn-save" onClick={handleSave}>저장</button>
+                  <button className="btn-cancel" onClick={() => { setMemo(item.memo || ''); setEditing(false) }}>취소</button>
+                </div>
+              </>
+            ) : memo ? (
+              <>
+                <MarkdownRenderer className="memo-content">{memo}</MarkdownRenderer>
+                <button className="btn-memo-edit" style={{ marginTop: 8, alignSelf: 'flex-start' }} onClick={() => setEditing(true)}>수정</button>
+              </>
+            ) : (
+              <button className="btn-memo-add" onClick={() => setEditing(true)}>+ 메모 추가</button>
+            )}
+          </div>
         )}
-      </DrawingCanvas>
+      </div>
+
+      {/* ③ AI 풀이 */}
       {item.answer && (
-        <div className="note-solution-toggle">
-          <button className="btn-toggle-solution" onClick={() => setShowSolution(v => !v)}>
-            {showSolution ? 'AI 풀이 접기 ▲' : 'AI 풀이 보기 ▼'}
+        <div className="note-collapsible-section">
+          <button
+            className="note-section-toggle"
+            onClick={() => setShowSolution(v => !v)}
+          >
+            <span className="note-step-info">
+              <span className="note-step-badge">Step 2</span>
+              <span className="note-step-title">풀이</span>
+            </span>
+            <span className={`toggle-arrow ${showSolution ? 'open' : ''}`}>›</span>
           </button>
           {showSolution && (
-            <div className="solution-body">
+            <div className="solution-body" style={{ margin: '0 0 0 0', borderRadius: '0 0 12px 12px' }}>
               <SolutionRenderer
                 onAddToMemo={(text) => {
                   const next = memo ? memo + '\n' + text : text
@@ -414,98 +480,18 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
           )}
         </div>
       )}
-    </div>
-  )
 
-  // ── 오른쪽: 메모 영역 ───────────────────────────────
-  const MemoPanel = (
-    <div className="note-memo-panel">
-      <div className="memo-panel-header">
-        <span className="memo-panel-title">메모</span>
-        {!editing && (
-          <button className="btn-memo-edit" onClick={() => setEditing(true)}>수정</button>
-        )}
-      </div>
-      {editing ? (
-        <>
-          <textarea
-            className="memo-textarea"
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            placeholder="핵심 개념, 오답 이유를 적어보세요."
-            autoFocus
-          />
-          <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-            <button className="btn-save" onClick={handleSave}>저장</button>
-            <button className="btn-cancel" onClick={() => { setMemo(item.memo || ''); setEditing(false) }}>취소</button>
-          </div>
-        </>
-      ) : (
-        memo
-          ? <MarkdownRenderer className="memo-content">{memo}</MarkdownRenderer>
-          : <p className="memo-content empty-memo">(메모 없음)</p>
-      )}
-    </div>
-  )
-
-  return (
-    <div className={`note-card ${hasMemo ? 'note-card--split' : ''}`}>
-      {/* 메타 */}
-      <div className="note-card-meta">
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span className="note-date">{item.created_at?.slice(0, 16)}</span>
-          {examTag && <span className="note-exam-tag">{examTag}</span>}
-        </div>
-        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          {!hasMemo && !editing && (
-            <button className="btn-memo-add" onClick={() => setEditing(true)}>+ 메모 추가</button>
-          )}
-          <button className="btn-delete-sm" onClick={() => onDelete(item.id)}>삭제</button>
-        </div>
-      </div>
-
-      {/* 본문 */}
-      {hasMemo ? (
-        showSolution ? (
-          // 풀이 열리면 단열로 전환
-          <div className="note-single-layout">
-            {QuestionPanel}
-            {MemoPanel}
-          </div>
-        ) : (
-          <div className="note-split-layout">
-            {QuestionPanel}
-            {MemoPanel}
-          </div>
-        )
-      ) : (
-        <div className="note-single-layout">
-          {QuestionPanel}
-          {editing && (
-            <div className="note-memo-panel note-memo-inline">
-              <textarea
-                className="memo-textarea"
-                value={memo}
-                onChange={(e) => setMemo(e.target.value)}
-                placeholder="핵심 개념, 오답 이유를 적어보세요."
-                autoFocus
-              />
-              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-                <button className="btn-save" onClick={handleSave}>저장</button>
-                <button className="btn-cancel" onClick={() => setEditing(false)}>취소</button>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* AI 토론 */}
-      <div className="note-chat-section">
+      {/* ④ AI 토론 */}
+      <div className="note-collapsible-section note-chat-section">
         <button
-          className="btn-chat-toggle"
+          className="note-section-toggle"
           onClick={() => showChat ? setShowChat(false) : openChat()}
         >
-          {showChat ? 'AI 토론 닫기 ▲' : '🤖 AI와 토론하기 ▼'}
+          <span className="note-step-info">
+            <span className="note-step-badge">{item.answer ? 'Step 3' : 'Step 2'}</span>
+            <span className="note-step-title">질문하기</span>
+          </span>
+          <span className={`toggle-arrow ${showChat ? 'open' : ''}`}>›</span>
         </button>
         {showChat && (
           <div className="note-chat-panel">

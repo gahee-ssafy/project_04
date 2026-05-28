@@ -36,7 +36,6 @@ export default function ExamListPage() {
               onClick={() => navigate(`/exam/${r.exam_year}/${r.exam_round}`)}
             >
               <span className="round-year">{r.exam_year}년</span>
-              <span className="round-num">{r.exam_round}회차</span>
               <span className="round-count">{r.problem_count}문제</span>
             </button>
           ))}
