@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getReport, regenerateReport } from '../api/report'
 import MarkdownRenderer from '../components/MarkdownRenderer'
-import QuizModal from '../components/QuizModal'
 
 function ConceptBar({ name, count, max }) {
   const pct = max > 0 ? Math.round((count / max) * 100) : 0
@@ -35,7 +34,6 @@ export default function ReportPage() {
   const [aiVisible, setAiVisible]     = useState(false)
   const [aiLoading, setAiLoading]     = useState(false)
   const [error, setError]             = useState(null)
-  const [showQuiz, setShowQuiz]       = useState(false)
   useEffect(() => {
     getReport()
       .then(res => {
@@ -192,12 +190,6 @@ export default function ReportPage() {
         </Section>
       )}
 
-      {/* 복습 퀴즈 버튼 */}
-      <button className="btn-quiz-start" onClick={() => setShowQuiz(true)}>
-        📝 오늘의 복습 퀴즈
-      </button>
-
-      {showQuiz && <QuizModal onClose={() => setShowQuiz(false)} />}
     </div>
   )
 }

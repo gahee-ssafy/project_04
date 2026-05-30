@@ -691,6 +691,99 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 }
 .btn-cancel:hover { background: var(--bg); border-color: #CBD5E1; }
 
+/* 쪽집게 노트 버튼 */
+.btn-print-note {
+  font-size: 0.72rem; font-weight: 700;
+  color: var(--primary); background: var(--primary-light);
+  border: 1px solid var(--primary-mid); border-radius: 99px;
+  padding: 3px 10px; cursor: pointer; transition: var(--transition);
+  flex-shrink: 0; white-space: nowrap;
+}
+.btn-print-note:hover { background: var(--primary); color: white; }
+
+/* ── 쪽집게 노트 인쇄 페이지 ── */
+.print-header-bar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 14px 24px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 10;
+}
+.print-header-bar h2 { flex: 1; font-size: 1rem; font-weight: 700; }
+.print-back-btn {
+  background: none; border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm); padding: 6px 14px;
+  font-size: 0.85rem; cursor: pointer; color: var(--text-2);
+  transition: var(--transition); font-weight: 600;
+}
+.print-back-btn:hover { background: var(--bg); }
+.print-trigger-btn {
+  background: var(--primary); color: white; border: none;
+  border-radius: var(--radius-sm); padding: 8px 18px;
+  font-size: 0.88rem; font-weight: 700; cursor: pointer;
+  transition: var(--transition);
+  box-shadow: 0 2px 8px rgba(61,90,241,0.25);
+}
+.print-trigger-btn:hover { opacity: 0.9; }
+
+.print-content {
+  max-width: 720px; margin: 0 auto; padding: 32px 24px;
+}
+.print-title { text-align: center; margin-bottom: 32px; padding-bottom: 20px; border-bottom: 2px solid var(--text-1); }
+.print-title h1 { font-size: 1.6rem; font-weight: 900; letter-spacing: -0.02em; }
+.print-subtitle { font-size: 0.85rem; color: var(--text-3); margin-top: 4px; }
+
+.print-items { display: flex; flex-direction: column; gap: 0; }
+.print-item {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--border);
+}
+.print-item-header {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 12px;
+}
+.print-item-num {
+  font-size: 0.8rem; font-weight: 800;
+  background: var(--text-1); color: white;
+  border-radius: 99px; padding: 3px 12px;
+}
+.print-item-answer-row {
+  margin-top: 10px; display: flex; justify-content: flex-end;
+}
+.print-item-answer {
+  font-size: 0.8rem; font-weight: 700; color: var(--primary);
+  background: var(--primary-light); border: 1px solid var(--primary-mid);
+  border-radius: 99px; padding: 3px 12px;
+}
+.print-item-img {
+  width: 100%; max-width: 100%;
+  border-radius: var(--radius-sm); margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
+.print-item-question {
+  font-size: 0.9rem; line-height: 1.65; color: var(--text-1); margin-bottom: 12px;
+}
+.print-item-memo {
+  background: #FFFBEB; border-left: 3px solid #F59E0B;
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  padding: 10px 14px;
+}
+.print-item-memo.empty { background: var(--bg); border-left-color: var(--border); }
+.print-memo-label {
+  font-size: 0.72rem; font-weight: 700; color: #92400E;
+  text-transform: uppercase; letter-spacing: 0.05em; display: block; margin-bottom: 4px;
+}
+.print-memo-text { font-size: 0.88rem; line-height: 1.7; color: var(--text-1); white-space: pre-wrap; }
+.print-memo-empty { font-size: 0.82rem; color: var(--text-3); font-style: italic; }
+
+/* 인쇄 시 스타일 */
+@media print {
+  .no-print { display: none !important; }
+  .navbar { display: none !important; }
+  main { padding: 0 !important; max-width: 100% !important; }
+  .print-content { padding: 20px; }
+  .print-item { break-inside: avoid; }
+  .print-item-img { max-height: 200px; width: auto; }
+}
+
 /* ── 모의고사 목록 ── */
 .exam-list-page { padding-bottom: 40px; }
 .exam-list-header {

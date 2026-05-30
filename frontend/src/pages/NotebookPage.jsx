@@ -1,10 +1,12 @@
 import { useEffect, useState, useRef } from 'react'
+import { useNavigate as useNav } from 'react-router-dom'
 import { getNotebook, saveMemo, deleteNotebook, notebookChat, getNotebookChatHistory } from '../api/notebook'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import SolutionRenderer from '../components/SolutionRenderer'
 import DrawingCanvas from '../components/DrawingCanvas'
 
 export default function NotebookPage() {
+  const navigate = useNav()
   const [items, setItems]         = useState([])
   const [loading, setLoading]     = useState(true)
   const [page, setPage]           = useState(0)
@@ -230,6 +232,10 @@ export default function NotebookPage() {
                         />
                       </span>
                       <span>메모 {memoCount}/{list.length}</span>
+                      <button
+                        className="btn-print-note"
+                        onClick={e => { e.stopPropagation(); navigate(`/notebook/print/${encodeURIComponent(name)}`) }}
+                      >쪽집게 노트</button>
                     </div>
                   </div>
                 )
@@ -336,20 +342,71 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
     setEditing(false)
   }
 
+  const streamChat = async ({ userMsg = '', imgToSend = null, isOpener = false } = {}) => {
+    const baseUrl = `http://${window.location.hostname}:8000`
+    const token = localStorage.getItem('token')
+
+    // 유저 메시지 먼저 UI에 추가
+    if (!isOpener) {
+      setChatHistory(prev => [...prev, { role: 'user', content: userMsg || '(필기 전송)', has_image: !!imgToSend }])
+    }
+    // 빈 AI 버블 추가 (스트리밍 중 채워짐)
+    setChatHistory(prev => [...prev, { role: 'assistant', content: '' }])
+    setChatLoading(true)
+
+    try {
+      const res = await fetch(`${baseUrl}/ai/notebook-chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          session_id: item.id,
+          question: displayQ(item.question),
+          memo: item.memo || '',
+          solution: item.answer || '',
+          user_message: userMsg,
+          image_data: imgToSend || '',
+          image_mime: 'image/png',
+        }),
+      })
+
+      const reader = res.body.getReader()
+      const decoder = new TextDecoder()
+      let buf = ''
+
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() // 미완성 줄 보관
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = JSON.parse(line.slice(6))
+          if (data.text) {
+            setChatHistory(prev => {
+              const next = [...prev]
+              next[next.length - 1] = { role: 'assistant', content: next[next.length - 1].content + data.text }
+              return next
+            })
+          }
+          if (data.done) {
+            setChatHistory(data.history)
+          }
+        }
+      }
+    } finally {
+      setChatLoading(false)
+    }
+  }
+
   const openChat = async () => {
     setShowChat(true)
     if (chatHistory.length === 0) {
-      setChatLoading(true)
-      try {
-        const saved = await getNotebookChatHistory(item.id)
-        if (saved.data.history.length > 0) {
-          setChatHistory(saved.data.history)
-        } else {
-          const res = await notebookChat(item.id, displayQ(item.question), item.memo || '', item.answer || '')
-          setChatHistory(res.data.history)
-        }
-      } finally {
-        setChatLoading(false)
+      const saved = await getNotebookChatHistory(item.id)
+      if (saved.data.history.length > 0) {
+        setChatHistory(saved.data.history)
+      } else {
+        await streamChat({ isOpener: true })
       }
     }
   }
@@ -363,22 +420,11 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
 
   const sendMessage = async () => {
     const msg = chatInput.trim()
-    if (!msg && !pendingImage || chatLoading) return
-    const displayMsg = msg || '(필기 전송)'
-    setChatHistory(prev => [...prev, { role: 'user', content: displayMsg, has_image: !!pendingImage }])
+    if ((!msg && !pendingImage) || chatLoading) return
     setChatInput('')
     const imgToSend = pendingImage
     setPendingImage(null)
-    setChatLoading(true)
-    try {
-      const res = await notebookChat(
-        item.id, displayQ(item.question), item.memo || '', item.answer || '',
-        msg, imgToSend
-      )
-      setChatHistory(res.data.history)
-    } finally {
-      setChatLoading(false)
-    }
+    await streamChat({ userMsg: msg, imgToSend })
   }
 
   useEffect(() => {

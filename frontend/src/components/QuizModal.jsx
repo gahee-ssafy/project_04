@@ -117,7 +117,7 @@ export default function QuizModal({ onClose }) {
           <MarkdownRenderer>{q.text}</MarkdownRenderer>
         </div>
 
-        <p className="quiz-instruction">위 설명이 맞나요?</p>
+        <p className="quiz-instruction">이 선지가 해당 문제의 정답이었나요?</p>
 
         {/* 버튼 */}
         {!answered ? (

@@ -1,10 +1,12 @@
+import json
 import base64
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from database import get_all_problems, save_session, get_notebook_chat, save_notebook_chat
 from dependencies import get_current_user
 from schemas.session import AskRequest
-from services.ai import ask, notebook_chat
+from services.ai import ask, notebook_chat, notebook_chat_stream
 
 router = APIRouter()
 
@@ -58,6 +60,42 @@ def notebook_chat_api(req: NotebookChatRequest, user=Depends(get_current_user)):
 
     save_notebook_chat(user["id"], req.session_id, history)
     return {"reply": reply, "history": history}
+
+
+@router.post("/notebook-chat/stream", summary="오답노트 채팅 스트리밍")
+def notebook_chat_stream_api(req: NotebookChatRequest, user=Depends(get_current_user)):
+    history = get_notebook_chat(user["id"], req.session_id)
+    img_bytes = base64.b64decode(req.image_data) if req.image_data else None
+
+    def generate():
+        full_reply = ""
+        is_opener = not history and not req.user_message and not img_bytes
+
+        for text in notebook_chat_stream(
+            req.question, req.memo, req.solution, history,
+            user_message=req.user_message,
+            image_bytes=img_bytes, image_mime=req.image_mime or "image/png"
+        ):
+            full_reply += text
+            yield f"data: {json.dumps({'text': text}, ensure_ascii=False)}\n\n"
+
+        # history 저장
+        new_history = list(history)
+        if is_opener:
+            new_history.append({"role": "assistant", "content": full_reply})
+        else:
+            if req.user_message or img_bytes:
+                new_history.append({"role": "user", "content": req.user_message or "(필기 전송)", "has_image": bool(img_bytes)})
+            new_history.append({"role": "assistant", "content": full_reply})
+
+        save_notebook_chat(user["id"], req.session_id, new_history)
+        yield f"data: {json.dumps({'done': True, 'history': new_history}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
 
 
 @router.get("/solution/{problem_id}", summary="문제 풀이 조회 (미리 생성된 풀이)")

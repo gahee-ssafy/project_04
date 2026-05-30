@@ -113,15 +113,26 @@ def ask(
 # =============================================================
 # 오답노트 메모 기반 AI 토론
 # =============================================================
-def notebook_chat(question: str, memo: str, solution: str, history: list,
-                  image_bytes: bytes = None, image_mime: str = None) -> str:
-    """메모를 읽고 소크라테스식 대화를 이어간다.
-    history가 비어있으면 AI가 먼저 말을 건다 (opener).
-    image_bytes가 있으면 학생 필기 이미지를 함께 전송.
-    """
-    messages = [SystemMessage(content=NOTEBOOK_CHAT_PROMPT)]
+def _get_notebook_opener(memo: str) -> str:
+    if memo:
+        return (
+            f"메모에 '{memo}' 라고 적어두셨군요. "
+            "좋아요, 그러면 이 문제에서 어떤 개념이 적용되는지, "
+            "본인의 말로 설명해보실 수 있을까요? "
+            "맞고 틀림을 바로 확인해드릴게요."
+        )
+    return (
+        "이 문제를 틀리셨군요. "
+        "이 문제가 어떤 개념을 묻는 문제라고 생각하셨는지, "
+        "본인의 말로 먼저 설명해보세요. "
+        "맞는 부분과 틀린 부분을 바로 짚어드릴게요."
+    )
 
-    # 문맥 주입
+
+def _build_notebook_messages(question: str, memo: str, solution: str, history: list,
+                              user_message: str = "", image_bytes: bytes = None,
+                              image_mime: str = None) -> list:
+    messages = [SystemMessage(content=NOTEBOOK_CHAT_PROMPT)]
     ctx_parts = [f"[문제]\n{question}"]
     if solution:
         ctx_parts.append(f"[AI 풀이]\n{solution}")
@@ -129,26 +140,7 @@ def notebook_chat(question: str, memo: str, solution: str, history: list,
         ctx_parts.append(f"[학생 메모]\n{memo}")
     messages.append(HumanMessage(content="\n\n".join(ctx_parts)))
 
-    if not history:
-        # opener: AI가 먼저 메모를 읽고 말 걸기
-        if memo:
-            opener = (
-                f"메모에 '{memo}' 라고 적어두셨군요. "
-                "좋아요, 그러면 이 문제에서 어떤 개념이 적용되는지, "
-                "본인의 말로 설명해보실 수 있을까요? "
-                "맞고 틀림을 바로 확인해드릴게요."
-            )
-        else:
-            opener = (
-                "이 문제를 틀리셨군요. "
-                "이 문제가 어떤 개념을 묻는 문제라고 생각하셨는지, "
-                "본인의 말로 먼저 설명해보세요. "
-                "맞는 부분과 틀린 부분을 바로 짚어드릴게요."
-            )
-        messages.append(AIMessage(content=opener))
-        return opener
-
-    # 이후 대화: history 이어 붙이기
+    # history 이어 붙이기
     messages.append(AIMessage(content=history[0]["content"]))  # opener
     for turn in history[1:]:
         if turn["role"] == "user":
@@ -156,16 +148,46 @@ def notebook_chat(question: str, memo: str, solution: str, history: list,
         else:
             messages.append(AIMessage(content=turn["content"]))
 
-    # 마지막 학생 메시지 — 이미지가 있으면 멀티모달로 전송
+    # 현재 유저 메시지 추가
     if image_bytes:
         img_b64 = base64.b64encode(image_bytes).decode("utf-8")
         mime = image_mime or "image/png"
-        messages.append(HumanMessage(content=[
+        content = [
             {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{img_b64}"}},
-            {"type": "text", "text": "(학생이 필기한 내용입니다. 이 필기를 보고 이해도를 파악해서 피드백해주세요.)"},
-        ]))
+            {"type": "text", "text": user_message or "(학생이 필기한 내용입니다. 이 필기를 보고 이해도를 파악해서 피드백해주세요.)"},
+        ]
+        messages.append(HumanMessage(content=content))
+    elif user_message:
+        messages.append(HumanMessage(content=user_message))
 
+    return messages
+
+
+def notebook_chat(question: str, memo: str, solution: str, history: list,
+                  user_message: str = "", image_bytes: bytes = None,
+                  image_mime: str = None) -> str:
+    if not history:
+        return _get_notebook_opener(memo)
+    messages = _build_notebook_messages(question, memo, solution, history, user_message, image_bytes, image_mime)
     return _parse_content(llm.invoke(messages))
+
+
+def notebook_chat_stream(question: str, memo: str, solution: str, history: list,
+                         user_message: str = "", image_bytes: bytes = None,
+                         image_mime: str = None):
+    """청크 단위로 텍스트를 yield하는 제너레이터."""
+    if not history:
+        yield _get_notebook_opener(memo)
+        return
+    messages = _build_notebook_messages(question, memo, solution, history, user_message, image_bytes, image_mime)
+    for chunk in llm.stream(messages):
+        content = chunk.content if hasattr(chunk, "content") else ""
+        if isinstance(content, list):
+            text = "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
+        else:
+            text = content if isinstance(content, str) else ""
+        if text:
+            yield text
 
 
 # =============================================================

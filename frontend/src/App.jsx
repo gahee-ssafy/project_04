@@ -6,6 +6,7 @@ import NotebookPage from './pages/NotebookPage'
 import ExamListPage from './pages/ExamListPage'
 import ExamPage from './pages/ExamPage'
 import ReportPage from './pages/ReportPage'
+import NotebookPrintPage from './pages/NotebookPrintPage'
 import './App.css'
 
 function PrivateRoute({ children }) {
@@ -70,6 +71,7 @@ export default function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/exam/:year/:round" element={<PrivateRoute><ExamPage /></PrivateRoute>} />
+          <Route path="/notebook/print/:group" element={<PrivateRoute><NotebookPrintPage /></PrivateRoute>} />
           <Route path="/" element={<PrivateRoute><HomePage /></PrivateRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
