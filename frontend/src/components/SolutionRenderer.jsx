@@ -5,7 +5,7 @@ const CHOICE_REGEX = /^([①②③④⑤])\s*/
 /**
  * AI 풀이 텍스트를 [정답] / [풀이] / 선지별로 파싱해서 렌더링
  */
-export default function SolutionRenderer({ children, onAddToMemo }) {
+export default function SolutionRenderer({ children, onAddToMemo, hideAnswer = false }) {
   if (!children) return null
 
   // $$...$$ 블록 수식이 줄바꿈에 의해 끊기지 않도록 먼저 보호
@@ -50,6 +50,7 @@ export default function SolutionRenderer({ children, onAddToMemo }) {
     <div className="solution-renderer">
       {sections.map((sec, i) => {
         if (sec.type === 'answer') {
+          if (hideAnswer) return null
           return (
             <div key={i} className="sol-answer-row">
               <span className="sol-label">정답</span>
@@ -88,6 +89,7 @@ export default function SolutionRenderer({ children, onAddToMemo }) {
         }
 
         if (sec.type === 'misc') {
+          if (hideAnswer && /^[①②③④⑤](\s*\n\s*풀이)?\s*$/.test(sec.content.trim())) return null
           return (
             <div key={i} className="sol-misc">
             <MarkdownRenderer>{sec.content}</MarkdownRenderer>

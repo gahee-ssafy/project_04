@@ -7,6 +7,7 @@ import ExamListPage from './pages/ExamListPage'
 import ExamPage from './pages/ExamPage'
 import ReportPage from './pages/ReportPage'
 import NotebookPrintPage from './pages/NotebookPrintPage'
+import AdminPage from './pages/AdminPage'
 import './App.css'
 
 function PrivateRoute({ children }) {
@@ -20,6 +21,7 @@ function Nav() {
       <Link to="/" className="nav-logo">AI 경제학 튜터</Link>
       <div className="nav-links">
         <span className="nav-user">{getUsername()}</span>
+        <Link to="/admin" style={{ fontSize: '0.82rem', color: 'var(--text-3)' }}>관리자</Link>
         <button onClick={() => { logout(); window.location.href = '/login' }}>
           로그아웃
         </button>
@@ -70,8 +72,14 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/exam/civil/:year/:round" element={<PrivateRoute><ExamPage /></PrivateRoute>} />
+          <Route path="/exam/ncs/:agency/:year/:domain" element={<PrivateRoute><ExamPage /></PrivateRoute>} />
+          {/* 하위 호환 */}
           <Route path="/exam/:year/:round" element={<PrivateRoute><ExamPage /></PrivateRoute>} />
+          <Route path="/notebook/print/civil/:subject" element={<PrivateRoute><NotebookPrintPage /></PrivateRoute>} />
+          <Route path="/notebook/print/ncs/:agency" element={<PrivateRoute><NotebookPrintPage /></PrivateRoute>} />
           <Route path="/notebook/print/:group" element={<PrivateRoute><NotebookPrintPage /></PrivateRoute>} />
+          <Route path="/admin" element={<PrivateRoute><AdminPage /></PrivateRoute>} />
           <Route path="/" element={<PrivateRoute><HomePage /></PrivateRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

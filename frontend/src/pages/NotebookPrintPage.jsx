@@ -22,18 +22,34 @@ function problemNum(q) {
   return m ? `${m[1]}번` : null
 }
 
+function getNcsAgency(q) {
+  const m = q.match(/\[모의고사\]\s+(.+?)\s+\d{4}년/)
+  return m ? m[1].trim() : null
+}
+
 export default function NotebookPrintPage() {
-  const { group } = useParams()
+  const { group, subject, agency } = useParams()
   const navigate = useNavigate()
   const [items, setItems] = useState([])
   const [loading, setLoading] = useState(true)
-  const groupName = decodeURIComponent(group)
+
+  const isCivilAll = !!subject
+  const isNcsAgency = !!agency
+  const agencyName = agency ? decodeURIComponent(agency) : null
+  const groupName = isCivilAll
+    ? decodeURIComponent(subject)
+    : isNcsAgency ? agencyName
+    : decodeURIComponent(group)
 
   useEffect(() => {
     getNotebook()
       .then(res => {
         const all = res.data
-        const filtered = all.filter(i => examGroup(i.question) === groupName)
+        const filtered = isCivilAll
+          ? all.filter(i => /\d{4}년\s*\d+회차/.test(i.question))
+          : isNcsAgency
+          ? all.filter(i => getNcsAgency(i.question) === agencyName)
+          : all.filter(i => examGroup(i.question) === groupName)
         setItems(filtered)
       })
       .finally(() => setLoading(false))
@@ -46,14 +62,14 @@ export default function NotebookPrintPage() {
       {/* 화면용 헤더 (인쇄 시 숨김) */}
       <div className="print-header-bar no-print">
         <button onClick={() => navigate(-1)} className="print-back-btn">← 돌아가기</button>
-        <h2>{groupName} 쪽집게 노트</h2>
+        <h2>{isCivilAll ? '경제학 전체' : isNcsAgency ? `${agencyName} 전체` : groupName} 쪽집게 노트</h2>
         <button onClick={() => window.print()} className="print-trigger-btn">🖨️ PDF 저장</button>
       </div>
 
       {/* 인쇄 영역 */}
       <div className="print-content">
         <div className="print-title">
-          <h1>{groupName}</h1>
+          <h1>{isCivilAll ? '공무원 기출 경제학 전체' : isNcsAgency ? `NCS ${agencyName} 전체` : groupName}</h1>
           <p className="print-subtitle">오답 쪽집게 노트 · {items.length}문제</p>
         </div>
 
@@ -76,7 +92,9 @@ export default function NotebookPrintPage() {
                 )}
 
                 {!item.image_data && (
-                  <p className="print-item-question">{displayQ(item.question)}</p>
+                  <p className="print-item-question">
+                    {item.problem_question || displayQ(item.question)}
+                  </p>
                 )}
 
                 {item.memo ? (
@@ -90,9 +108,9 @@ export default function NotebookPrintPage() {
                   </div>
                 )}
 
-                {answer && (
+                {(answer || item.problem_correct_answer) && (
                   <div className="print-item-answer-row">
-                    <span className="print-item-answer">정답 {answer}</span>
+                    <span className="print-item-answer">정답 {item.problem_correct_answer || answer}</span>
                   </div>
                 )}
               </div>

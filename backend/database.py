@@ -141,6 +141,13 @@ def init_db():
         "ALTER TABLE sessions  ADD COLUMN problem_id INTEGER",
         "ALTER TABLE learning_reports ADD COLUMN weekly_message TEXT NOT NULL DEFAULT ''",
         "ALTER TABLE learning_reports ADD COLUMN weekly_at DATETIME",
+        # NCS 확장
+        "ALTER TABLE problems       ADD COLUMN exam_type TEXT DEFAULT 'civil'",
+        "ALTER TABLE problems       ADD COLUMN ncs_agency TEXT",
+        "ALTER TABLE problems       ADD COLUMN ncs_domain TEXT",
+        "ALTER TABLE exam_attempts  ADD COLUMN exam_type TEXT DEFAULT 'civil'",
+        "ALTER TABLE exam_attempts  ADD COLUMN ncs_agency TEXT",
+        "ALTER TABLE exam_attempts  ADD COLUMN ncs_domain TEXT",
     ]
     for sql in migrations:
         try:
@@ -277,9 +284,14 @@ def get_sessions_last_week(user_id: int) -> list[dict]:
 def get_sessions_with_memo(user_id: int) -> list[dict]:
     conn = get_conn()
     rows = conn.execute(
-        """SELECT s.*, m.memo
+        """SELECT s.*, m.memo,
+                  p.question AS problem_question,
+                  p.question_text AS problem_question_text,
+                  p.correct_answer AS problem_correct_answer,
+                  p.concept AS problem_concept
            FROM sessions s
            INNER JOIN memos m ON m.session_id = s.id AND m.user_id = s.user_id
+           LEFT JOIN problems p ON p.id = s.problem_id
            WHERE s.user_id = ?
              AND (m.memo != '' OR s.question LIKE '[오답노트]%' OR s.question LIKE '[모의고사]%')
            ORDER BY s.created_at DESC""",
@@ -409,18 +421,62 @@ def get_problems_by_round(exam_year: int, exam_round: int) -> list[dict]:
     return [row_to_dict(r) for r in rows]
 
 
+def get_problems_by_ncs(agency: str, exam_year: int, domain: str) -> list[dict]:
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT * FROM problems
+           WHERE exam_type = 'ncs' AND ncs_agency = ? AND exam_year = ? AND ncs_domain = ?
+           ORDER BY id""",
+        (agency, exam_year, domain),
+    ).fetchall()
+    conn.close()
+    return [row_to_dict(r) for r in rows]
+
+
 def get_exam_rounds() -> list[dict]:
-    """사용 가능한 모의고사 회차 목록 반환."""
+    """공무원 기출 회차 목록 반환."""
     conn = get_conn()
     rows = conn.execute(
         """SELECT exam_year, exam_round, COUNT(*) as problem_count
            FROM problems
            WHERE exam_year IS NOT NULL AND exam_round IS NOT NULL
+             AND (exam_type IS NULL OR exam_type = 'civil')
            GROUP BY exam_year, exam_round
            ORDER BY exam_year DESC, exam_round DESC""",
     ).fetchall()
     conn.close()
     return [dict(r) for r in rows]
+
+
+def get_ncs_list() -> list[dict]:
+    """NCS 문제은행 목록 (대행사/년도/분야별 집계)."""
+    conn = get_conn()
+    rows = conn.execute(
+        """SELECT ncs_agency, exam_year, ncs_domain, COUNT(*) as problem_count
+           FROM problems
+           WHERE exam_type = 'ncs'
+             AND ncs_agency IS NOT NULL
+             AND exam_year IS NOT NULL
+             AND ncs_domain IS NOT NULL
+           GROUP BY ncs_agency, exam_year, ncs_domain
+           ORDER BY ncs_agency, exam_year DESC, ncs_domain""",
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+def save_exam_attempt_ncs(user_id: int, agency: str, exam_year: int, domain: str,
+                          problem_id: int, user_answer: str, is_correct: bool):
+    conn = get_conn()
+    conn.execute(
+        """INSERT INTO exam_attempts
+           (user_id, exam_year, exam_round, problem_id, user_answer, is_correct,
+            exam_type, ncs_agency, ncs_domain)
+           VALUES (?, ?, 0, ?, ?, ?, 'ncs', ?, ?)""",
+        (user_id, exam_year, problem_id, user_answer, int(is_correct), agency, domain),
+    )
+    conn.commit()
+    conn.close()
 
 
 def update_problem_solution(problem_id: int, solution: str, correct_answer: str = None):
@@ -478,6 +534,18 @@ def save_exam_attempt(
     return attempt_id
 
 
+def _notebook_label(problem: dict) -> str:
+    """문제 유형에 맞는 오답노트 라벨 생성."""
+    if problem.get("ncs_agency"):
+        # NCS: 첫 줄 = 그룹 라벨, 이후 = 실제 문제 내용
+        label = f"[모의고사] {problem['ncs_agency']} {problem['exam_year']}년 {problem['ncs_domain']}"
+        actual_q = (problem.get("question") or "").strip()
+        return f"{label}\n{actual_q}" if actual_q else label
+    else:
+        # 공무원 기출: [모의고사] {질문텍스트}
+        return f"[모의고사] {problem['question']}"
+
+
 def auto_add_wrong_to_notebook(
     user_id: int,
     problem: dict,
@@ -492,7 +560,7 @@ def auto_add_wrong_to_notebook(
         "INSERT INTO sessions (user_id, question, answer, image_data, image_mime, problem_id) VALUES (?, ?, ?, ?, ?, ?)",
         (
             user_id,
-            f"[모의고사] {problem['question']}",
+            _notebook_label(problem),
             problem.get("solution") or "",
             image_data,
             problem.get("image_mime"),

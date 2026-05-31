@@ -17,10 +17,16 @@ export default function NotebookPage() {
   const [deleting, setDeleting]   = useState(false)
   const [sortNewest, setSortNewest] = useState(true)
   const [memoFilter, setMemoFilter] = useState('all') // 'all' | 'has' | 'none'
-  const [selectedGroup, setSelectedGroup] = useState(null) // null = 회차 목록
+  const [selectedGroup, setSelectedGroup] = useState(null)
+
+  // 네비게이션 레벨
+  const [nbTab, setNbTab]         = useState(null)  // null | 'civil' | 'ncs'
+  const [selSubject, setSelSubject] = useState(null) // 공무원: 과목
+  const [selAgency, setSelAgency]  = useState(null)  // NCS: 대행사
 
   const setFilter = (f) => { setMemoFilter(f); setPage(0) }
   const selectGroup = (g) => { setSelectedGroup(g); setPage(0) }
+  const resetNav = () => { setNbTab(null); setSelSubject(null); setSelAgency(null); selectGroup(null) }
 
   useEffect(() => {
     getNotebook()
@@ -71,18 +77,31 @@ export default function NotebookPage() {
     }
   }
 
-  const displayQ = (q) => q.replace(/^\[(오답노트|모의고사)\]\s*/, '')
+  const displayQ  = (q) => q.replace(/^\[(오답노트|모의고사)\]\s*/, '')
+  const isCivil   = (q) => /\d{4}년\s*\d+회차/.test(q)
+  const isNcs     = (q) => /\[모의고사\]\s+.+\s+\d{4}년\s+/.test(q) && !isCivil(q)
+  const getNcsAgency = (q) => { const m = q.match(/\[모의고사\]\s+(.+?)\s+\d{4}년/); return m ? m[1].trim() : '기타' }
+  const getNcsDomain = (q) => { const m = q.match(/\d{4}년\s+(.+)$/); return m ? m[1].trim() : '기타' }
   const examTag  = (q) => {
     const m = q.match(/(\d{4})년\s*(\d+)회차/)
     return m ? `${m[1]}년` : null
   }
   const examGroup = (q) => {
-    const m = q.match(/(\d{4})년\s*(\d+)회차/)
-    return m ? `${m[1]}년 ${m[2]}회차` : '직접 추가'
+    // 공무원: "2025년 1회차"
+    const civil = q.match(/(\d{4})년\s*(\d+)회차/)
+    if (civil) return `${civil[1]}년 ${civil[2]}회차`
+    // NCS: "사람인HR 2024년 의사소통능력"
+    const ncs = q.match(/([^\]]+)\s+(\d{4})년\s+(.+)/)
+    if (ncs) return `${ncs[1].trim()} ${ncs[2]}년 ${ncs[3].trim()}`
+    return '직접 추가'
   }
   const problemNum = (q) => {
     const m = q.match(/(\d+)번/)
-    return m ? `${m[1]}번` : null
+    if (m) return `${m[1]}번`
+    // NCS: 분야명을 번호 대신 표시
+    const ncs = q.match(/\d{4}년\s+(.+)$/)
+    if (ncs) return ncs[1].trim().slice(0, 6)
+    return null
   }
 
   // 편집 모드용 그룹핑
@@ -105,20 +124,40 @@ export default function NotebookPage() {
 
   if (loading) return <p className="loading">불러오는 중...</p>
 
-  // 일반 보기용 그룹 (등록순 고정)
-  const viewGroups = () => {
-    const groups = {}
-    items.forEach(it => {
-      const key = examGroup(it.question)
-      if (!groups[key]) groups[key] = []
-      groups[key].push(it)
-    })
-    return groups
-  }
+  // 카테고리별 분류
+  const civilItems = items.filter(i => isCivil(i.question))
+  const ncsItems   = items.filter(i => isNcs(i.question))
 
-  const groups = viewGroups()
-  const groupNames = Object.keys(groups)
-  const currentGroupItems = selectedGroup ? (groups[selectedGroup] || []) : []
+  // 공무원: 연도/회차별 그룹
+  const civilGroups = (() => {
+    const g = {}
+    civilItems.forEach(it => {
+      const key = examGroup(it.question)
+      if (!g[key]) g[key] = []
+      g[key].push(it)
+    })
+    return g
+  })()
+
+  // NCS: 대행사 목록
+  const ncsAgencies = [...new Set(ncsItems.map(i => getNcsAgency(i.question)))]
+
+  // NCS: 선택된 대행사의 도메인별 그룹
+  const ncsAgencyItems = selAgency ? ncsItems.filter(i => getNcsAgency(i.question) === selAgency) : []
+  const ncsDomainGroups = (() => {
+    const g = {}
+    ncsAgencyItems.forEach(it => {
+      const key = getNcsDomain(it.question)
+      if (!g[key]) g[key] = []
+      g[key].push(it)
+    })
+    return g
+  })()
+
+  // 최종 선택된 그룹의 아이템
+  const currentGroupItems = selectedGroup
+    ? (nbTab === 'civil' ? civilGroups[selectedGroup] : ncsDomainGroups[selectedGroup]) || []
+    : []
   const total = selectedGroup ? currentGroupItems.length : items.length
   const item  = selectedGroup ? currentGroupItems[page] : null
 
@@ -213,42 +252,133 @@ export default function NotebookPage() {
         </>
 
       ) : !selectedGroup ? (
-        /* ── 회차 목록 ── */
-        <div className="notebook-group-list">
-          {groupNames.length === 0
-            ? <p className="empty">아직 등록된 문제가 없어요.</p>
-            : groupNames.map(name => {
-                const list = groups[name]
-                const memoCount = list.filter(i => i.memo?.trim()).length
-                return (
-                  <div key={name} className="notebook-group-card" onClick={() => selectGroup(name)}>
-                    <div className="notebook-group-card-title">{name}</div>
-                    <div className="notebook-group-card-meta">
-                      <span>{list.length}문제</span>
-                      <span className="notebook-group-memo-bar">
-                        <span
-                          className="notebook-group-memo-fill"
-                          style={{ width: `${Math.round(memoCount / list.length * 100)}%` }}
-                        />
+        /* ── 카테고리 네비게이션 ── */
+        <>
+          {/* 브레드크럼 */}
+          {(nbTab || selSubject || selAgency) && (
+            <div className="ncs-breadcrumb" style={{ marginBottom: 16 }}>
+              <button onClick={resetNav}>오답노트</button>
+              {nbTab && (
+                <>
+                  <span className="ncs-bc-sep">›</span>
+                  <button onClick={() => { setSelSubject(null); setSelAgency(null) }}>
+                    {nbTab === 'civil' ? '공무원 기출' : 'NCS'}
+                  </button>
+                </>
+              )}
+              {(selSubject || selAgency) && (
+                <>
+                  <span className="ncs-bc-sep">›</span>
+                  <span>{selSubject || selAgency}</span>
+                </>
+              )}
+            </div>
+          )}
+
+          {/* 1단계: 카테고리 선택 */}
+          {!nbTab && (
+            <div className="home-tabs" style={{ marginBottom: 20 }}>
+              <button className="home-tab" onClick={() => setNbTab('civil')}>공무원 기출</button>
+              <button className="home-tab" onClick={() => setNbTab('ncs')}>NCS</button>
+            </div>
+          )}
+
+          {/* 공무원: 과목 선택 */}
+          {nbTab === 'civil' && !selSubject && (
+            <div className="ncs-agency-grid">
+              <div className="ncs-agency-card" style={{ cursor: 'default' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                  <span className="ncs-agency-name" style={{ cursor: 'pointer' }} onClick={() => setSelSubject('경제학')}>경제학</span>
+                  <button
+                    className="btn-print-note"
+                    onClick={e => { e.stopPropagation(); navigate(`/notebook/print/civil/경제학`) }}
+                  >쪽집게 노트</button>
+                </div>
+                <span className="round-count" style={{ cursor: 'pointer' }} onClick={() => setSelSubject('경제학')}>{civilItems.length}문제</span>
+              </div>
+            </div>
+          )}
+
+          {/* 공무원: 연도/회차 그룹 */}
+          {nbTab === 'civil' && selSubject && (
+            <div className="notebook-group-list">
+              {Object.keys(civilGroups).length === 0
+                ? <p className="empty">아직 등록된 문제가 없어요.</p>
+                : Object.entries(civilGroups).map(([name, list]) => {
+                    const memoCount = list.filter(i => i.memo?.trim()).length
+                    return (
+                      <div key={name} className="notebook-group-card" onClick={() => selectGroup(name)}>
+                        <div className="notebook-group-card-title">{name}</div>
+                        <div className="notebook-group-card-meta">
+                          <span>{list.length}문제</span>
+                          <span className="notebook-group-memo-bar">
+                            <span className="notebook-group-memo-fill"
+                              style={{ width: `${Math.round(memoCount / list.length * 100)}%` }} />
+                          </span>
+                          <span>메모 {memoCount}/{list.length}</span>
+                        </div>
+                      </div>
+                    )
+                  })
+              }
+            </div>
+          )}
+
+          {/* NCS: 대행사 선택 */}
+          {nbTab === 'ncs' && !selAgency && (
+            <div className="ncs-agency-grid">
+              {ncsAgencies.length === 0
+                ? <p className="empty">아직 등록된 NCS 오답이 없어요.</p>
+                : ncsAgencies.map(agency => (
+                    <div key={agency} className="ncs-agency-card" style={{ cursor: 'default' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                        <span className="ncs-agency-name" style={{ cursor: 'pointer' }} onClick={() => setSelAgency(agency)}>{agency}</span>
+                        <button
+                          className="btn-print-note"
+                          onClick={e => { e.stopPropagation(); navigate(`/notebook/print/ncs/${encodeURIComponent(agency)}`) }}
+                        >쪽집게 노트</button>
+                      </div>
+                      <span className="round-count" style={{ cursor: 'pointer' }} onClick={() => setSelAgency(agency)}>
+                        {ncsItems.filter(i => getNcsAgency(i.question) === agency).length}문제
                       </span>
-                      <span>메모 {memoCount}/{list.length}</span>
-                      <button
-                        className="btn-print-note"
-                        onClick={e => { e.stopPropagation(); navigate(`/notebook/print/${encodeURIComponent(name)}`) }}
-                      >쪽집게 노트</button>
                     </div>
-                  </div>
-                )
-              })
-          }
-        </div>
+                  ))
+              }
+            </div>
+          )}
+
+          {/* NCS: 영역별 그룹 */}
+          {nbTab === 'ncs' && selAgency && (
+            <div className="notebook-group-list">
+              {Object.keys(ncsDomainGroups).length === 0
+                ? <p className="empty">아직 등록된 문제가 없어요.</p>
+                : Object.entries(ncsDomainGroups).map(([domain, list]) => {
+                    const memoCount = list.filter(i => i.memo?.trim()).length
+                    return (
+                      <div key={domain} className="notebook-group-card" onClick={() => selectGroup(domain)}>
+                        <div className="notebook-group-card-title">{domain}</div>
+                        <div className="notebook-group-card-meta">
+                          <span>{list.length}문제</span>
+                          <span className="notebook-group-memo-bar">
+                            <span className="notebook-group-memo-fill"
+                              style={{ width: `${Math.round(memoCount / list.length * 100)}%` }} />
+                          </span>
+                          <span>메모 {memoCount}/{list.length}</span>
+                        </div>
+                      </div>
+                    )
+                  })
+              }
+            </div>
+          )}
+        </>
 
       ) : (
         /* ── 일반 모드: 한 문제씩 ── */
         <>
           {/* 뒤로가기 */}
           <button className="btn-nb-back" onClick={() => selectGroup(null)}>
-            ← {selectedGroup}
+            ← {nbTab === 'ncs' ? `${selAgency} · ${selectedGroup}` : selectedGroup}
           </button>
 
           {/* 페이지 네비게이션 */}
@@ -452,6 +582,10 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
                 alt="문제 이미지"
                 className="note-img"
               />
+            ) : item.problem_question ? (
+              <div className="note-question-text">
+                <p className="note-question">{item.problem_question}</p>
+              </div>
             ) : (
               <p className="note-question">{displayQ(item.question)}</p>
             )}
@@ -515,7 +649,13 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
           </button>
           {showSolution && (
             <div className="solution-body" style={{ margin: '0 0 0 0', borderRadius: '0 0 12px 12px' }}>
+              {item.problem_correct_answer && (
+                <div className="solution-correct-answer">
+                  정답: <strong>{item.problem_correct_answer}</strong>
+                </div>
+              )}
               <SolutionRenderer
+                hideAnswer={!!item.problem_correct_answer}
                 onAddToMemo={(text) => {
                   const next = memo ? memo + '\n' + text : text
                   setMemo(next)

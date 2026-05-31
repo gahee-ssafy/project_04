@@ -24,6 +24,9 @@ class ExamAnswerItem(BaseModel):
     user_answer: str
     is_correct: bool                   # 자기 채점
 
+# 라우터에서 AnswerItem 으로도 참조
+AnswerItem = ExamAnswerItem
+
 
 class ExamSubmitRequest(BaseModel):
     exam_year: int

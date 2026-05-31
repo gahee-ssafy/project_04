@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { getExamProblems, submitExam } from '../api/exam'
+import { getExamProblems, getNcsProblems, submitExam, submitNcs } from '../api/exam'
 import client from '../api/client'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import SolutionRenderer from '../components/SolutionRenderer'
@@ -36,8 +36,9 @@ function ExamStepper({ phase }) {
 }
 
 export default function ExamPage() {
-  const { year, round } = useParams()
+  const { year, round, agency, domain } = useParams()
   const navigate = useNavigate()
+  const isNcs = !!agency  // NCS 여부
 
   const [problems, setProblems]     = useState([])
   const [answers, setAnswers]       = useState({})
@@ -53,11 +54,16 @@ export default function ExamPage() {
   const [saved, setSaved]           = useState(false)
   const [expanded, setExpanded]     = useState({})
 
-  const STORAGE_KEY = `exam_progress_${year}_${round}`
+  const STORAGE_KEY = isNcs
+    ? `exam_progress_ncs_${agency}_${year}_${domain}`
+    : `exam_progress_${year}_${round}`
 
   // 문제 로드 + localStorage 복원
   useEffect(() => {
-    getExamProblems(year, round)
+    const fetchFn = isNcs
+      ? getNcsProblems(decodeURIComponent(agency), year, decodeURIComponent(domain))
+      : getExamProblems(year, round)
+    fetchFn
       .then((res) => {
         setProblems(res.data)
         const init = {}
@@ -105,19 +111,23 @@ export default function ExamPage() {
     setCurrent(0)
   }
 
+  const examTitle = isNcs
+    ? `${decodeURIComponent(agency)} · ${year}년 · ${decodeURIComponent(domain)}`
+    : `${year}년 ${round}회차`
+
   const handleSubmit = async () => {
     setSubmitting(true)
     try {
-      const payload = {
-        exam_year: parseInt(year),
-        exam_round: parseInt(round),
-        answers: problems.map((p) => ({
-          problem_id: p.id,
-          user_answer: answers[p.id] || '',
-          is_correct: correct[p.id] === true,
-        })),
-      }
-      const res = await submitExam(payload)
+      const answerPayload = problems.map((p) => ({
+        problem_id: p.id,
+        user_answer: answers[p.id] || '',
+        is_correct: correct[p.id] === true,
+      }))
+      const payload = isNcs
+        ? { ncs_agency: decodeURIComponent(agency), exam_year: parseInt(year),
+            ncs_domain: decodeURIComponent(domain), answers: answerPayload }
+        : { exam_year: parseInt(year), exam_round: parseInt(round), answers: answerPayload }
+      const res = isNcs ? await submitNcs(payload) : await submitExam(payload)
       setResult(res.data)
       // 오답 기본 선택 초기화 (전부 미선택)
       const initSel = {}
@@ -135,11 +145,11 @@ export default function ExamPage() {
     if (!confirm(`${ids.length}개의 문제를 오답노트에 저장할까요?`)) return
     setSaving(true)
     try {
-      await client.post('/exam/add-to-notebook', {
-        exam_year: parseInt(year),
-        exam_round: parseInt(round),
-        problem_ids: ids,
-      })
+      const payload = isNcs
+        ? { exam_year: parseInt(year), ncs_agency: decodeURIComponent(agency),
+            ncs_domain: decodeURIComponent(domain), problem_ids: ids }
+        : { exam_year: parseInt(year), exam_round: parseInt(round), problem_ids: ids }
+      await client.post('/exam/add-to-notebook', payload)
       setSaved(true)
       localStorage.removeItem(STORAGE_KEY)
     } finally {
@@ -169,7 +179,7 @@ export default function ExamPage() {
     return (
       <div className="exam-page">
         <div className="exam-header">
-          <span className="exam-title">{year}년 {round}회차</span>
+          <span className="exam-title">{examTitle}</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="exam-progress">{answeredCount}/{total}</span>
             {answeredCount > 0 && (
@@ -238,7 +248,7 @@ export default function ExamPage() {
     return (
       <div className="exam-page">
         <div className="exam-header">
-          <span className="exam-title">{year}년 {round}회차</span>
+          <span className="exam-title">{examTitle}</span>
           <span className="exam-progress">{gradedCount}/{total}</span>
         </div>
         <ExamStepper phase={phase} />
@@ -319,7 +329,7 @@ export default function ExamPage() {
     return (
       <div className="exam-page">
         <div className="exam-header">
-          <span className="exam-title">{year}년 {round}회차</span>
+          <span className="exam-title">{examTitle}</span>
           <span className="exam-progress">완료</span>
         </div>
         <ExamStepper phase={phase} />
