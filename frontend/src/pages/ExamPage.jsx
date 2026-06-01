@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { getExamProblems, getNcsProblems, submitExam, submitNcs } from '../api/exam'
 import client from '../api/client'
@@ -53,6 +53,8 @@ export default function ExamPage() {
   const [saving, setSaving]         = useState(false)
   const [saved, setSaved]           = useState(false)
   const [expanded, setExpanded]     = useState({})
+  const [timeSpent, setTimeSpent]   = useState({}) // { [problem_id]: seconds }
+  const startTimeRef                = useRef(Date.now())
 
   const STORAGE_KEY = isNcs
     ? `exam_progress_ncs_${agency}_${year}_${domain}`
@@ -69,17 +71,24 @@ export default function ExamPage() {
         const init = {}
         res.data.forEach((p) => { init[p.id] = '' })
 
-        const saved = localStorage.getItem(STORAGE_KEY)
-        if (saved) {
+        const savedRaw = localStorage.getItem(STORAGE_KEY)
+        if (savedRaw) {
           try {
-            const s = JSON.parse(saved)
-            setAnswers({ ...init, ...s.answers })
-            setCorrect(s.correct || {})
-            setCurrent(s.current || 0)
-            setPhase(s.phase || PHASE.SOLVING)
-            if (s.result) setResult(s.result)
-            if (s.selected) setSelected(s.selected)
+            const s = JSON.parse(savedRaw)
+            // result 없이 RESULT phase이면 오염된 데이터 → 초기화
+            if (s.phase === PHASE.RESULT && !s.result) {
+              localStorage.removeItem(STORAGE_KEY)
+              setAnswers(init)
+            } else {
+              setAnswers({ ...init, ...s.answers })
+              setCorrect(s.correct || {})
+              setCurrent(s.current || 0)
+              setPhase(s.phase || PHASE.SOLVING)
+              if (s.result) setResult(s.result)
+              if (s.selected) setSelected(s.selected)
+            }
           } catch {
+            localStorage.removeItem(STORAGE_KEY)
             setAnswers(init)
           }
         } else {
@@ -87,7 +96,7 @@ export default function ExamPage() {
         }
       })
       .finally(() => setLoading(false))
-  }, [year, round])
+  }, [year, round, agency, domain])
 
   // 상태 변경 시 localStorage 저장
   useEffect(() => {
@@ -100,6 +109,19 @@ export default function ExamPage() {
   }, [answers, correct, current, phase, result, selected, loading])
 
   useEffect(() => { setShowSolution(false) }, [current])
+
+  // 문제 이동 시 이전 문제 소요시간 누적
+  useEffect(() => {
+    if (loading || problems.length === 0) return
+    const probId = problems[current]?.id
+    startTimeRef.current = Date.now()
+    return () => {
+      const elapsed = Math.round((Date.now() - startTimeRef.current) / 1000)
+      if (elapsed > 0 && probId) {
+        setTimeSpent(prev => ({ ...prev, [probId]: (prev[probId] || 0) + elapsed }))
+      }
+    }
+  }, [current, loading, problems])
 
   const goToGrading = () => {
     const initCorrect = {}
@@ -320,6 +342,10 @@ export default function ExamPage() {
   // ═══════════════════════════════════════════════════
   // 3단계: 결과
   // ═══════════════════════════════════════════════════
+  if (phase === PHASE.RESULT && !result) {
+    return <p className="loading">불러오는 중...</p>
+  }
+
   if (phase === PHASE.RESULT && result) {
     const score      = Math.round((result.correct / result.total) * 100)
     const wrongItems = result.results.filter(r => !r.is_correct)
@@ -371,58 +397,69 @@ export default function ExamPage() {
           </div>
         </div>
 
-        {wrongItems.length > 0 && (
-          <div className="wrong-section">
-            <div className="wrong-section-header">
-              <h3>오답 ({wrongItems.length}개)</h3>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+        {/* 전체 문항 소요시간 표 */}
+        <div className="wrong-section">
+          <div className="wrong-section-header">
+            <h3>문항별 결과</h3>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              {wrongItems.length > 0 && (
                 <button className="btn-select-all" onClick={() => toggleAll(wrongItems)}>
                   {allSelected ? '전체 해제' : '전체 선택'}
                 </button>
-                {selectedCount > 0 && !saved && (
-                  <button className="btn-save-notebook" onClick={handleSaveNotebook} disabled={saving}>
-                    {saving ? '저장 중...' : `오답노트 저장 (${selectedCount}개)`}
-                  </button>
-                )}
-                {saved && <span className="saved-badge">저장 완료!</span>}
-              </div>
+              )}
+              {selectedCount > 0 && !saved && (
+                <button className="btn-save-notebook" onClick={handleSaveNotebook} disabled={saving}>
+                  {saving ? '저장 중...' : `오답노트 저장 (${selectedCount}개)`}
+                </button>
+              )}
+              {saved && <span className="saved-badge">저장 완료!</span>}
             </div>
-            <ul className="wrong-list">
-              {wrongItems.map((r, i) => {
-                const numMatch = r.question.match(/(\d+)번/)
-                const qNum = numMatch ? `${numMatch[1]}번` : `${i + 1}번`
-                const prob = problems.find(p => p.id === r.problem_id)
-                const isExpanded = !!expanded[r.problem_id]
-                return (
-                  <li
-                    key={r.problem_id}
-                    className={`wrong-item ${selected[r.problem_id] ? 'selected' : ''} ${isExpanded ? 'expanded' : ''}`}
-                    onClick={() => prob?.image_data && setExpanded(prev => ({ ...prev, [r.problem_id]: !prev[r.problem_id] }))}
-                  >
-                    <div className="wrong-row">
-                      <span className="wrong-num">{qNum}</span>
+          </div>
+          <ul className="wrong-list">
+            {result.results.map((r, i) => {
+              const numMatch = r.question.match(/(\d+)번/)
+              const qNum = numMatch ? `${numMatch[1]}번` : `${i + 1}번`
+              const prob = problems.find(p => p.id === r.problem_id)
+              const isExpanded = !!expanded[r.problem_id]
+              const secs = timeSpent[r.problem_id] || 0
+              const timeStr = secs >= 60
+                ? `${Math.floor(secs / 60)}분 ${secs % 60}초`
+                : `${secs}초`
+              return (
+                <li
+                  key={r.problem_id}
+                  className={`wrong-item ${!r.is_correct && selected[r.problem_id] ? 'selected' : ''} ${isExpanded ? 'expanded' : ''}`}
+                  onClick={() => prob?.image_data && !r.is_correct && setExpanded(prev => ({ ...prev, [r.problem_id]: !prev[r.problem_id] }))}
+                >
+                  <div className="wrong-row">
+                    <span className="wrong-num">{qNum}</span>
+                    <span className={`result-ox ${r.is_correct ? 'correct' : 'wrong'}`}>
+                      {r.is_correct ? '⭕' : '❌'}
+                    </span>
+                    <span className="result-time">{timeStr}</span>
+                    {!r.is_correct && (
                       <input
                         type="checkbox"
                         checked={!!selected[r.problem_id]}
                         onChange={() => setSelected(prev => ({ ...prev, [r.problem_id]: !prev[r.problem_id] }))}
                         onClick={e => e.stopPropagation()}
                       />
-                    </div>
-                    {isExpanded && prob?.image_data && (
-                      <div className="wrong-img-expand">
-                        <img
-                          src={`data:${prob.image_mime};base64,${prob.image_data}`}
-                          alt={qNum}
-                          className="wrong-img-full"
-                        />
-                      </div>
                     )}
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        )}
+                  </div>
+                  {isExpanded && prob?.image_data && (
+                    <div className="wrong-img-expand">
+                      <img
+                        src={`data:${prob.image_mime};base64,${prob.image_data}`}
+                        alt={qNum}
+                        className="wrong-img-full"
+                      />
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
+        </div>
 
       </div>
     )

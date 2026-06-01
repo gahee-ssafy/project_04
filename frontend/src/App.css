@@ -1425,6 +1425,8 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 }
 .wrong-item.expanded .wrong-row { grid-column: 1; }
 
+.result-ox { font-size: 1rem; }
+.result-time { font-size: 0.82rem; color: var(--text-3); margin-left: auto; margin-right: 8px; }
 .result-actions { display: flex; gap: 10px; margin-bottom: 20px; }
 .btn-notebook {
   flex: 1; padding: 13px; border-radius: var(--radius-md); background: var(--primary);
