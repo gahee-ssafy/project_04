@@ -1664,6 +1664,17 @@ main:has(.exam-page) { max-width: 100%; padding: 0; }
 }
 .btn-report-refresh:hover { background: var(--bg); border-color: #CBD5E1; }
 
+/* 학습의지 게이지 */
+.gauge-rings { display: flex; gap: 24px; justify-content: center; padding: 12px 0; }
+.gauge-ring-wrap { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.gauge-ring-label { font-size: 0.75rem; color: var(--text-3); font-weight: 600; }
+.effort-badge {
+  font-size: 0.75rem; font-weight: 700;
+  background: #ecfdf5; color: #065f46;
+  border: 1px solid #6ee7b7;
+  border-radius: 99px; padding: 2px 10px;
+}
+
 /* 숫자 칩 */
 .report-chips {
   display: flex;
@@ -1854,6 +1865,10 @@ main:has(.exam-page) { max-width: 100%; padding: 0; }
 
 /* 학습 패턴 블록 */
 .report-ai-block-pattern {
+  background: white;
+  border: 1px solid #e5e7eb;
+  border-radius: 12px;
+  padding: 14px 16px;
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -1909,6 +1924,21 @@ main:has(.exam-page) { max-width: 100%; padding: 0; }
   color: #2563eb;
   font-style: italic;
 }
+
+/* 취약 개념 블록 */
+.report-ai-block-weakness {
+  background: #fff7ed;
+  border: 1px solid #fed7aa;
+  border-radius: 12px;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.report-ai-block-weakness .markdown-body {
+  font-size: 0.9rem; line-height: 1.75; color: #374151;
+}
+.report-ai-block-weakness .markdown-body p { margin: 0; }
 
 /* 추천 학습 방향 블록 */
 .report-ai-block-advice {

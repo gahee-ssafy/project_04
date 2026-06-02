@@ -125,16 +125,28 @@ def _calc_stats(notebooks: list, chats_by_session: dict) -> dict:
         for m in msgs if m.get("role") == "user"
     )
     dates = [n["created_at"][:10] for n in notebooks if n.get("created_at")]
+    memo_rate = round(memo_count / total * 100) if total else 0
+    chat_rate = round(chat_sessions / total * 100) if total else 0
+    # 학습의지 점수: 메모율 60% + 토론율 40%
+    effort_score = round(memo_rate * 0.6 + chat_rate * 0.4)
+    effort_label = (
+        "매우 능동적" if effort_score >= 70 else
+        "능동적"      if effort_score >= 40 else
+        "보통"        if effort_score >= 20 else
+        "소극적"
+    )
     return {
         "total": total,
         "memo_count": memo_count,
-        "memo_rate": round(memo_count / total * 100) if total else 0,
+        "memo_rate": memo_rate,
         "chat_sessions": chat_sessions,
-        "chat_rate": round(chat_sessions / total * 100) if total else 0,
+        "chat_rate": chat_rate,
         "student_msg_count": student_msg_count,
         "first_date": min(dates) if dates else None,
         "last_date":  max(dates) if dates else None,
         "active_days": len(set(dates)),
+        "effort_score": effort_score,
+        "effort_label": effort_label,
     }
 
 
@@ -150,41 +162,49 @@ def _collect_text(notebooks, chats_by_session) -> str:
 
 # ─── 개념 추출 ───────────────────────────────────────────────────
 def _extract_concepts(notebooks: list, chats_by_session: dict = None) -> list[tuple[str, int]]:
+    """메모 + 학생 질문 텍스트 기반으로 취약 개념 추출.
+    학생이 직접 쓴 내용이 많을수록 = 더 고민한 개념 = 취약 개념."""
     counts = Counter()
     chats_by_session = chats_by_session or {}
 
+    def _match_concept(text: str) -> str | None:
+        best, best_n = None, 0
+        for c, keywords in ECON_CONCEPTS.items():
+            cnt = sum(text.count(kw) for kw in keywords)
+            if cnt > best_n:
+                best, best_n = c, cnt
+        return best if best_n > 0 else None
+
     for n in notebooks:
-        concept = n.get("problem_concept", "")
-
-        # 개념 태그가 없는 항목(직접 추가 등)은 텍스트로 보완
-        # 우선순위: question_text(이미지문제 원문) > question > memo
-        if not concept:
-            q_text = n.get("question_text", "").strip()
-            if q_text:
-                combined = q_text
-            else:
-                combined = f"{n.get('question', '')} {n.get('memo', '')}"
-            best, best_n = None, 0
-            for c, keywords in ECON_CONCEPTS.items():
-                cnt = sum(combined.count(kw) for kw in keywords)
-                if cnt > best_n:
-                    best, best_n = c, cnt
-            concept = best
-
-        if not concept:
-            continue
-
-        # ① 오답노트에 있음 → +1
-        counts[concept] += 1
-
-        # ② 메모 작성 → +1 (길이 무관)
-        if n.get("memo", "").strip():
-            counts[concept] += 1
-
-        # ③ AI 토론 → 학생 메시지 수만큼 추가
+        memo = n.get("memo", "").strip()
         session_msgs = chats_by_session.get(n["id"], [])
-        user_msg_count = sum(1 for m in session_msgs if m.get("role") == "user")
-        counts[concept] += user_msg_count
+        student_msgs = [m["content"] for m in session_msgs if m.get("role") == "user"]
+
+        # 메모에서 개념 추출 → 메모 길이에 비례한 가중치 (핵심)
+        if memo:
+            concept = _match_concept(memo)
+            if not concept:
+                concept = n.get("problem_concept") or _match_concept(
+                    n.get("question_text", "") or n.get("question", "")
+                )
+            if concept:
+                # 메모 길이가 길수록 더 고민한 것 → 최대 5점
+                memo_weight = min(5, max(1, len(memo) // 30))
+                counts[concept] += memo_weight
+
+        # 학생 질문에서 개념 추출 → 질문 1개당 +1
+        for msg in student_msgs:
+            concept = _match_concept(msg)
+            if concept:
+                counts[concept] += 1
+
+        # 메모도 질문도 없지만 오답은 있음 → +1 (기본값)
+        if not memo and not student_msgs:
+            concept = n.get("problem_concept") or _match_concept(
+                n.get("question_text", "") or n.get("question", "")
+            )
+            if concept:
+                counts[concept] += 1
 
     result = [(c, n) for c, n in counts.items() if n > 0]
     result.sort(key=lambda x: -x[1])
@@ -216,20 +236,31 @@ JSON으로만 답해주세요. 다른 말은 절대 하지 마세요.
 - 말투: 친한 선배처럼 편하게. "~네요", "~하더라고요", "~해봐요"
 - 딱딱한 강의체, 면책 문구, 인사말 금지.
 - *, **, *** 같은 마크다운 기호 절대 금지. 강조가 필요하면 따옴표만 사용.
+- 학생의 실제 메모나 질문을 인용할 때는 반드시 대괄호로 감쌀 것. 예: [이윤세는 왜 MC가 변동하지 않죠?]
 
-pattern 작성 예시 (이 톤과 구조를 그대로 따라주세요):
-- 조세론: "이윤세는 MC에 영향이 없으나, 종량세는 MC를 직접 상승시킨다"는 차이를 명확히 구분한 게 인상적이에요. 왜 MC가 변하지 않는지 스스로 질문하며 원리를 파고드는 모습에서 깊이 있는 고민이 느껴지네요.
-- 소비자 이론: "주관적 소비구조에 대한 설명이 없습니다"라며 문제의 전제 조건을 꼼꼼히 따져보는 예리함에 놀랐어요. 단순히 외우는 게 아니라 논리적으로 빈틈을 찾는 습관이 실력을 키워줄 거예요.
-- 노동 경제: "MRP_L(120-2L) = MFC_L(8L)" 수식을 직접 세워 정답을 도출해낸 걸 보니 복잡한 계산 문제도 이제 자신감이 붙은 것 같아 든든하네요.
-- 경제성장론: 솔로우 모형에서 기술진보를 "하늘에서 떨어진 벼락같은 것"이라고 비유한 표현이 너무 재치 있고 직관적이더라고요. 외생적 성장의 한계를 AK 모형과 비교하며 정리한 덕분에 거시경제학의 큰 줄기를 아주 잘 잡았어요.
+각 필드 작성 방법:
+
+"tendency" (학습 성향, 2~3문장):
+- 학생이 어떻게 사고하는지를 실제 질문/메모에서 뽑아 묘사.
+- 예: user01은 [왜 MC는 변동하지 않죠?]라고 스스로 질문하며 이윤세가 최종 결과에만 영향을 미친다는 본질을 파고드는 모습에서 깊이 있는 고민이 느껴집니다.
+
+"weakness" (취약 개념, 2~3문장):
+- "~가 뭐죠?", "~이 뭔가요?" 식의 기초 개념 질문 패턴을 찾아 원론적 기초 부족 여부를 판단.
+- 취약 개념 목록([취약 개념])과 연결해서 서술.
+- 예: [후생함수가 뭐죠?]라고 질문하는 모습에서 후생경제학의 원론적 기초가 부족한 모습을 보입니다.
+
+"advice" (추천 학습 방향, 1~2문장):
+- 학습 성향의 강점을 취약 개념에 연결해서 조언.
+- 예: 예리한 질문 습관을 이번에 틀린 환율과 수요·공급 파트에도 적용해 원리를 다시 점검해보면 좋겠어요.
 
 {{
-  "pattern": "위 예시와 같은 형식으로 학생 데이터 기반 3~5개 항목. 반드시 학생의 실제 메모나 질문을 따옴표로 인용할 것.",
-  "advice": "100자 이내. 메모나 질문 중 하나를 따옴표로 직접 인용해서 앞으로의 공부 방향 조언 1가지만."
+  "tendency": "학습 성향",
+  "weakness": "취약 개념 분석",
+  "advice": "추천 학습 방향"
 }}"""
 
 
-def _build_data_section(stats, concepts, quotes, notebooks, user_id: int) -> str:
+def _build_data_section(stats, concepts, quotes, notebooks, user_id: int, weak_concepts: list = None) -> str:
     lines = []
 
     # 전체 메모
@@ -289,6 +320,11 @@ def _build_data_section(stats, concepts, quotes, notebooks, user_id: int) -> str
         for wl in weekly_lines:
             lines.append(f"  - {wl}")
 
+    # 취약 개념 목록 명시
+    if weak_concepts:
+        concept_names = [c for c, _ in weak_concepts[:6]]
+        lines.append(f"\n[취약 개념]\n  {', '.join(concept_names)}")
+
     return "\n".join(lines) if lines else "(아직 메모와 질문 내용이 없습니다)"
 
 
@@ -306,13 +342,15 @@ def _call_gemini(data_section: str) -> tuple[str, str]:
     try:
         m = re.search(r'\{[\s\S]*\}', raw)
         obj = json.loads(m.group()) if m else {}
-        pattern = _normalize_math(obj.get("pattern", "").strip())
-        advice  = _normalize_math(obj.get("advice",  "").strip())
+        tendency = _normalize_math(obj.get("tendency", "").strip())
+        weakness = _normalize_math(obj.get("weakness", "").strip())
+        advice   = _normalize_math(obj.get("advice",   "").strip())
     except Exception:
-        pattern = _normalize_math(raw.strip())
-        advice  = ""
+        tendency = _normalize_math(raw.strip())
+        weakness = ""
+        advice   = ""
 
-    return pattern, advice
+    return tendency, weakness, advice
 
 
 # ─── 메인 ────────────────────────────────────────────────────────
@@ -339,18 +377,19 @@ def generate_report(user_id: int, regenerate: bool = False) -> dict:
     cached = get_learning_report(user_id)
 
     if cached and not regenerate:
-        ai_pattern   = cached["ai_pattern"]
-        ai_advice    = cached["ai_advice"]
+        ai_tendency  = cached.get("ai_pattern", "")   # 기존 캐시 호환
+        ai_weakness  = cached.get("ai_weakness", "")
+        ai_advice    = cached.get("ai_advice", "")
         ai_generated = cached["generated_at"][:16]
         ai_is_cached = True
         weekly_auto  = False
     else:
-        data_section = _build_data_section(stats, concepts, quotes_all, notebooks, user_id)
-        ai_pattern, ai_advice = _call_gemini(data_section)
-        save_learning_report(user_id, ai_pattern, ai_advice)
+        data_section = _build_data_section(stats, concepts, quotes_all, notebooks, user_id, weak_concepts=concepts)
+        ai_tendency, ai_weakness, ai_advice = _call_gemini(data_section)
+        save_learning_report(user_id, ai_tendency, ai_advice, ai_weakness)
         ai_generated = datetime.now().strftime("%Y-%m-%d %H:%M")
         ai_is_cached = False
-        weekly_auto  = False  # 스케줄러에서 호출 시 True로 덮어씀
+        weekly_auto  = False
 
     return {
         "has_data":     True,
@@ -361,7 +400,8 @@ def generate_report(user_id: int, regenerate: bool = False) -> dict:
         "stats":        stats,
         "concepts":     concepts,
         "quotes":       quotes_display,
-        "ai_pattern":   ai_pattern,
+        "ai_tendency":  ai_tendency,
+        "ai_weakness":  ai_weakness,
         "ai_advice":    ai_advice,
     }
 

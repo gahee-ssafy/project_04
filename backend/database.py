@@ -148,6 +148,7 @@ def init_db():
         "ALTER TABLE exam_attempts  ADD COLUMN exam_type TEXT DEFAULT 'civil'",
         "ALTER TABLE exam_attempts  ADD COLUMN ncs_agency TEXT",
         "ALTER TABLE exam_attempts  ADD COLUMN ncs_domain TEXT",
+        "ALTER TABLE learning_reports ADD COLUMN ai_weakness TEXT NOT NULL DEFAULT ''",
     ]
     for sql in migrations:
         try:
@@ -166,12 +167,13 @@ def init_db():
                 id           INTEGER PRIMARY KEY AUTOINCREMENT,
                 user_id      INTEGER NOT NULL,
                 ai_pattern   TEXT NOT NULL DEFAULT '',
+                ai_weakness  TEXT NOT NULL DEFAULT '',
                 ai_advice    TEXT NOT NULL DEFAULT '',
                 generated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
-            INSERT INTO learning_reports_new (id, user_id, ai_pattern, ai_advice, generated_at)
-                SELECT id, user_id, ai_pattern, ai_advice, generated_at FROM learning_reports;
+            INSERT INTO learning_reports_new (id, user_id, ai_pattern, ai_weakness, ai_advice, generated_at)
+                SELECT id, user_id, ai_pattern, COALESCE(ai_weakness, ''), ai_advice, generated_at FROM learning_reports;
             DROP TABLE learning_reports;
             ALTER TABLE learning_reports_new RENAME TO learning_reports;
         """)
@@ -594,7 +596,7 @@ def get_learning_report(user_id: int) -> dict | None:
     """가장 최신 학습일지 1개 반환."""
     conn = get_conn()
     row = conn.execute(
-        """SELECT ai_pattern, ai_advice, generated_at FROM learning_reports
+        """SELECT ai_pattern, ai_weakness, ai_advice, generated_at FROM learning_reports
            WHERE user_id = ? ORDER BY generated_at DESC LIMIT 1""",
         (user_id,),
     ).fetchone()
@@ -602,13 +604,13 @@ def get_learning_report(user_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-def save_learning_report(user_id: int, ai_pattern: str, ai_advice: str):
+def save_learning_report(user_id: int, ai_pattern: str, ai_advice: str, ai_weakness: str = ""):
     """새 학습일지 row 추가 (1:N 히스토리)."""
     conn = get_conn()
     conn.execute(
-        """INSERT INTO learning_reports (user_id, ai_pattern, ai_advice, generated_at)
-           VALUES (?, ?, ?, CURRENT_TIMESTAMP)""",
-        (user_id, ai_pattern, ai_advice),
+        """INSERT INTO learning_reports (user_id, ai_pattern, ai_weakness, ai_advice, generated_at)
+           VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)""",
+        (user_id, ai_pattern, ai_weakness, ai_advice),
     )
     conn.commit()
     conn.close()

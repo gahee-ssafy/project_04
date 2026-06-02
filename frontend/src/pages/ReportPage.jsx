@@ -15,6 +15,27 @@ function ConceptBar({ name, count, max }) {
   )
 }
 
+function GaugeRing({ value = 0, label, color }) {
+  const r = 28
+  const circ = 2 * Math.PI * r
+  const pct = isNaN(value) ? 0 : value
+  const offset = circ - (pct / 100) * circ
+  return (
+    <div className="gauge-ring-wrap">
+      <svg width="72" height="72" viewBox="0 0 72 72">
+        <circle cx="36" cy="36" r={r} fill="none" stroke="#e5e7eb" strokeWidth="7"/>
+        <circle cx="36" cy="36" r={r} fill="none" stroke={color} strokeWidth="7"
+          strokeDasharray={circ} strokeDashoffset={offset}
+          strokeLinecap="round" transform="rotate(-90 36 36)"
+          style={{ transition: 'stroke-dashoffset 0.6s ease' }}
+        />
+        <text x="36" y="40" textAnchor="middle" fontSize="13" fontWeight="700" fill={color}>{pct}%</text>
+      </svg>
+      <span className="gauge-ring-label">{label}</span>
+    </div>
+  )
+}
+
 function Section({ icon, title, children, aside }) {
   return (
     <div className="report-section">
@@ -38,7 +59,7 @@ export default function ReportPage() {
     getReport()
       .then(res => {
         setReport(res.data)
-        if (res.data?.ai_pattern) setAiVisible(true)  // 캐시 있으면 바로 펼침
+        if (res.data?.ai_tendency) setAiVisible(true)  // 캐시 있으면 바로 펼침
       })
       .catch(() => setError('보고서를 불러오지 못했어요.'))
       .finally(() => setLoading(false))
@@ -49,7 +70,7 @@ export default function ReportPage() {
     if (aiVisible) { setAiVisible(false); return }
 
     // 이미 캐시된 데이터 있으면 바로 보여줌
-    if (report?.ai_pattern) { setAiVisible(true); return }
+    if (report?.ai_tendency) { setAiVisible(true); return }
 
     // 없으면 Gemini 호출
     setAiLoading(true)
@@ -87,14 +108,15 @@ export default function ReportPage() {
     </div>
   )
 
-  const { generated_at, ai_generated, ai_is_cached, weekly_auto, stats, concepts, quotes, ai_pattern, ai_advice } = report
+  const { generated_at, ai_generated, ai_is_cached, weekly_auto, stats, concepts, quotes, ai_tendency, ai_weakness, ai_advice } = report
   const maxCount = concepts?.length > 0 ? concepts[0][1] : 1
 
   // “…” / “…” 인용 부분을 굵은 기울임꼴로 변환 (따옴표 유지)
   const formatAdvice = (text) =>
     text
-      .replace(/“([^”\n]+)”/g, '“***$1***”') // “…” 곡따옴표
-      .replace(/”([^”\n]+)”/g, '”***$1***”')                          // “…” 직따옴표
+      .replace(/\[([^\]\n]+)\]/g, '**[$1]**')  // [질문] → 굵게
+      .replace(/”([^”\n]+)”/g, '**[$1]**')     // “…” 곡따옴표 호환
+      .replace(/”([^”\n]+)”/g, '**[$1]**')     // “…” 직따옴표 호환
 
   return (
     <div className="report-page">
@@ -102,13 +124,13 @@ export default function ReportPage() {
       {/* 주간 자동 갱신 알림 */}
       {weekly_auto && (
         <div className="weekly-auto-banner">
-          📬 7일이 지나 이번 주 새 분석이 도착했어요!
+          7일이 지나 이번 주 새 분석이 도착했어요!
         </div>
       )}
 
       {/* 헤더 */}
       <div className="report-header">
-        <h2 className="report-title">📋 학습일지</h2>
+        <h2 className="report-title">학습일지</h2>
         <span className="report-date">{generated_at} 기준</span>
       </div>
 
@@ -120,29 +142,32 @@ export default function ReportPage() {
           disabled={aiLoading}
         >
           {aiLoading
-            ? '🤖 AI 분석 중...'
+            ? 'AI 분석 중...'
             : aiVisible
               ? '▲ AI 분석 접기'
-              : ai_pattern
-                ? '🤖 AI 분석 보기 ▼'
-                : '🤖 AI 분석 받기 ▼'}
+              : ai_tendency
+                ? 'AI 분석 보기 ▼'
+                : 'AI 분석 받기 ▼'}
         </button>
-        {ai_is_cached && ai_generated && !aiLoading && (
-          <span className="report-ai-cached-note">{ai_generated} 분석됨</span>
-        )}
       </div>
 
       {aiVisible && (
         <div className="report-ai-panel">
-          {ai_pattern && (
+          {ai_tendency && (
             <div className="report-ai-block-pattern">
-              <span className="report-ai-label">📊 학습 패턴</span>
-              <MarkdownRenderer>{formatAdvice(ai_pattern)}</MarkdownRenderer>
+              <span className="report-ai-label">학습 성향</span>
+              <MarkdownRenderer>{formatAdvice(ai_tendency)}</MarkdownRenderer>
+            </div>
+          )}
+          {ai_weakness && (
+            <div className="report-ai-block-weakness">
+              <span className="report-ai-label">취약 개념</span>
+              <MarkdownRenderer>{formatAdvice(ai_weakness)}</MarkdownRenderer>
             </div>
           )}
           {ai_advice && (
             <div className="report-ai-block-advice">
-              <span className="report-ai-label">💡 추천 학습 방향</span>
+              <span className="report-ai-label">추천 학습 방향</span>
               <MarkdownRenderer>{formatAdvice(ai_advice)}</MarkdownRenderer>
             </div>
           )}
@@ -178,9 +203,22 @@ export default function ReportPage() {
         </div>
       </div>
 
+      {/* 학습의지 게이지 */}
+      <Section icon="" title="학습 의지"
+        aside={stats.effort_label ? <span className="effort-badge">{stats.effort_label}</span> : null}>
+        <div className="gauge-rings">
+          <GaugeRing value={stats.memo_rate}  label="메모 작성률"  color="#f59e0b" />
+          <GaugeRing value={stats.chat_rate}  label="AI 토론률"   color="#3D5AF1" />
+          <GaugeRing value={stats.effort_score} label="종합 의지"  color="#10b981" />
+        </div>
+        <p className="report-concepts-note">
+          오답 문제 중 메모를 작성하거나 AI 토론에 참여한 비율로 산출해요.
+        </p>
+      </Section>
+
       {/* 자주 다룬 개념 */}
       {concepts?.length > 0 && (
-        <Section icon="🏷️" title="자주 다룬 개념">
+        <Section icon="" title="자주 다룬 개념">
           <div className="report-concepts">
             {concepts.map(([name, count]) => (
               <ConceptBar key={name} name={name} count={count} max={maxCount} />
