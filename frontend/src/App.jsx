@@ -74,7 +74,6 @@ export default function App() {
           <Route path="/register" element={<RegisterPage />} />
           <Route path="/exam/civil/:year/:round" element={<PrivateRoute><ExamPage /></PrivateRoute>} />
           <Route path="/exam/ncs/:agency/:year/:domain" element={<PrivateRoute><ExamPage /></PrivateRoute>} />
-          {/* 하위 호환 */}
           <Route path="/exam/:year/:round" element={<PrivateRoute><ExamPage /></PrivateRoute>} />
           <Route path="/notebook/print/civil/:subject" element={<PrivateRoute><NotebookPrintPage /></PrivateRoute>} />
           <Route path="/notebook/print/ncs/:agency" element={<PrivateRoute><NotebookPrintPage /></PrivateRoute>} />

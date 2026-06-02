@@ -83,6 +83,7 @@ body {
 .nav-links button:hover { background: var(--bg); border-color: #CBD5E1; }
 
 main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
+main:has(.exam-page) { max-width: 100%; padding: 0; }
 
 /* ── 인증 ── */
 .auth-container {
@@ -1036,7 +1037,7 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 }
 
 /* ── 모의고사 풀기 ── */
-.exam-page { width: 100%; padding: 0 24px 100px; box-sizing: border-box; }
+.exam-page { width: 100%; max-width: 100%; padding: 16px 16px 100px; box-sizing: border-box; overflow-x: hidden; }
 
 /* 문제(좌) + 선지(우) 2열 */
 .exam-body-layout { display: flex; gap: 12px; align-items: flex-start; }
@@ -1065,9 +1066,11 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
   background: var(--surface);
   border: 1.5px solid var(--border);
   border-radius: var(--radius-xl);
-  padding: 22px;
+  padding: 16px;
   margin-bottom: 16px;
   box-shadow: var(--shadow-md);
+  overflow: hidden;
+  min-width: 0;
   text-align: left;
   min-height: 360px;
 }
