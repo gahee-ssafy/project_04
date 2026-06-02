@@ -685,9 +685,34 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
               {chatHistory.map((msg, i) => {
                 const memoMatch = msg.role === 'assistant' && msg.content.match(/📝 메모 제안[:：]\s*(.+)/s)
                 const memoSuggestion = memoMatch ? memoMatch[1].trim().split('\n')[0].trim() : null
+
+                // assistant 메시지를 문단별로 분리
+                const paragraphs = msg.role === 'assistant'
+                  ? msg.content.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+                  : null
+
                 return (
                   <div key={i} className={`chat-bubble ${msg.role}`}>
-                    <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                    {paragraphs ? (
+                      <div className="chat-bubble-paragraphs">
+                        {paragraphs.map((para, j) => (
+                          <div key={j} className="chat-para-row">
+                            <MarkdownRenderer>{para}</MarkdownRenderer>
+                            <button
+                              className="btn-para-save"
+                              title="메모에 추가"
+                              onClick={async () => {
+                                const next = memo ? memo + '\n\n' + para : para
+                                setMemo(next)
+                                await onSaveMemo(item.id, next)
+                              }}
+                            >+</button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                    )}
                     {memoSuggestion && (
                       <button
                         className="btn-save-memo-suggestion"
