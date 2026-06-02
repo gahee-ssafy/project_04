@@ -226,28 +226,33 @@ export default function ExamPage() {
           ))}
         </div>
 
-        <DrawingCanvas questionId={prob.id}>
-          <div className="question-card">
-            <p className="question-num">문제 {current + 1}</p>
-            {prob.image_data ? (
-              <img src={`data:${prob.image_mime};base64,${prob.image_data}`} alt="문제 이미지" className="question-img" />
-            ) : (
-              <p className="question-text">{prob.question}</p>
-            )}
-            <p className="question-meta">{prob.topic} · 난이도 {prob.difficulty}</p>
+        <div className="exam-body-layout">
+          <div className="exam-question-col">
+            <DrawingCanvas questionId={prob.id}>
+              <div className="question-card">
+                <p className="question-num">문제 {current + 1}</p>
+                {prob.image_data ? (
+                  <img src={`data:${prob.image_mime};base64,${prob.image_data}`} alt="문제 이미지" className="question-img" />
+                ) : (
+                  <p className="question-text">{prob.question}</p>
+                )}
+                <p className="question-meta">{prob.topic} · 난이도 {prob.difficulty}</p>
+              </div>
+            </DrawingCanvas>
           </div>
-        </DrawingCanvas>
-
-        <div className="choice-buttons">
-          {CHOICES.map((ch, i) => (
-            <button
-              key={ch}
-              className={`choice-btn ${answers[prob.id] === CHOICE_VALS[i] ? 'selected' : ''}`}
-              onClick={() => setAnswers({ ...answers, [prob.id]: CHOICE_VALS[i] })}
-            >
-              {ch}
-            </button>
-          ))}
+          <div className="exam-choice-col">
+            <div className="choice-buttons">
+              {CHOICES.map((ch, i) => (
+                <button
+                  key={ch}
+                  className={`choice-btn ${answers[prob.id] === CHOICE_VALS[i] ? 'selected' : ''}`}
+                  onClick={() => setAnswers({ ...answers, [prob.id]: answers[prob.id] === CHOICE_VALS[i] ? '' : CHOICE_VALS[i] })}
+                >
+                  {ch}
+                </button>
+              ))}
+            </div>
+          </div>
         </div>
 
         <div className="exam-nav">

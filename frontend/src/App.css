@@ -1036,7 +1036,12 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 }
 
 /* ── 모의고사 풀기 ── */
-.exam-page { max-width: 600px; margin: 0 auto; padding-bottom: 20px; }
+.exam-page { width: 100%; padding: 0 24px 100px; box-sizing: border-box; }
+
+/* 문제(좌) + 선지(우) 2열 */
+.exam-body-layout { display: flex; gap: 12px; align-items: flex-start; }
+.exam-question-col { flex: 1; min-width: 0; }
+.exam-choice-col { flex-shrink: 0; width: 44px; }
 .exam-header {
   display: flex; justify-content: space-between; align-items: center;
   margin-bottom: 10px;
@@ -1192,24 +1197,54 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 
 /* ── 필기 캔버스 ── */
 
-/* 문제 콘텐츠 + 오른쪽 툴바 전체 래퍼 */
+/* ── 필기 캔버스 ── */
 .question-canvas-wrapper {
   display: flex;
-  align-items: stretch;
+  flex-direction: column;
   gap: 0;
   margin-bottom: 16px;
 }
 
-/* 왼쪽: 문제 콘텐츠 영역 (캔버스 오버레이 기준점) */
+/* 상단 툴바 */
+.drawing-toolbar-top {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: var(--bg);
+  border: 1.5px solid var(--border);
+  border-bottom: none;
+  border-radius: var(--radius-xl) var(--radius-xl) 0 0;
+}
+.dtool-btn {
+  display: flex; align-items: center; gap: 5px;
+  padding: 5px 10px;
+  border: 1.5px solid var(--border);
+  border-radius: 8px;
+  background: white;
+  font-size: 0.78rem; font-weight: 500; color: var(--text-2);
+  cursor: pointer; transition: all 0.12s;
+}
+.dtool-btn:hover { background: var(--bg); border-color: #aaa; }
+.dtool-btn.active { border-color: #3D5AF1; background: #f0f3ff; color: #3D5AF1; }
+.dtool-btn.active.highlight { border-color: #ca8a04; background: #fefce8; color: #92400e; }
+.dtool-divider { width: 1px; height: 20px; background: var(--border); margin: 0 2px; }
+.dtool-btn.dtool-clear { color: #ef4444; border-color: #fca5a5; padding: 5px 8px; }
+.dtool-btn.dtool-clear:hover { background: #fff1f2; }
+
+/* 문제 콘텐츠 영역 (캔버스 오버레이 기준점) */
 .question-canvas-area {
   position: relative;
   flex: 1;
   min-width: 0;
 }
-/* 캔버스 영역 안 카드의 여분 마진 제거 (정확한 오버레이를 위해) */
-.question-canvas-area .question-card { margin-bottom: 0; }
+.question-canvas-area .question-card {
+  margin-bottom: 0;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
+  border-top: none;
+}
 
-/* 투명 캔버스 — 문제 이미지 위에 정확히 겹침 */
+/* 투명 캔버스 — 문제 위에 정확히 겹침 */
 .drawing-canvas-overlay {
   position: absolute;
   inset: 0;
@@ -1220,70 +1255,8 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
   touch-action: none;
   background: transparent;
   z-index: 10;
-  border-radius: 20px;
+  border-radius: 0 0 var(--radius-xl) var(--radius-xl);
 }
-
-/* 오른쪽 세로 툴바 */
-.drawing-toolbar-right {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 6px;
-  background: var(--bg);
-  border: 1.5px solid var(--border);
-  border-left: none;
-  border-radius: 0 var(--radius-xl) var(--radius-xl) 0;
-  width: 44px;
-  flex-shrink: 0;
-}
-
-.drawing-tool-btn {
-  width: 32px; height: 32px;
-  border: 1.5px solid #e0dbd4;
-  border-radius: 8px;
-  background: white;
-  font-size: 1rem;
-  cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  transition: all 0.12s;
-  padding: 0;
-}
-.drawing-tool-btn.active { border-color: #3D5AF1; background: #f0f3ff; }
-.drawing-tool-btn:hover { background: #f5f3ef; }
-
-/* 세로 구분선 */
-.drawing-divider-h {
-  width: 24px; height: 1px;
-  background: #e5e0d8;
-  margin: 2px 0;
-}
-
-.drawing-colors-vert { display: flex; flex-direction: column; gap: 5px; align-items: center; }
-.drawing-color-btn {
-  width: 18px; height: 18px; border-radius: 50%;
-  border: 2px solid transparent; cursor: pointer;
-  transition: all 0.12s; padding: 0;
-}
-.drawing-color-btn.active { border-color: #fff; outline: 2px solid #333; transform: scale(1.2); }
-
-.drawing-sizes-vert { display: flex; flex-direction: column; gap: 5px; align-items: center; }
-.drawing-size-btn {
-  width: 28px; height: 28px;
-  border: 1.5px solid #e0dbd4; border-radius: 6px; background: white;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all 0.12s;
-}
-.drawing-size-btn.active { border-color: #3D5AF1; background: #f0f3ff; }
-
-.drawing-clear-btn {
-  width: 32px; height: 32px;
-  border: 1.5px solid #fca5a5; border-radius: 8px;
-  background: white; font-size: 1rem;
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-  transition: all 0.12s; padding: 0;
-}
-.drawing-clear-btn:hover { background: #fff1f2; }
 
 /* ── 자기 채점 ── */
 .grading-card {
@@ -1445,17 +1418,16 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
 
 /* ── ①②③④ 선택 버튼 ── */
 .choice-buttons {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 100px; /* fixed nav 공간 */
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 .choice-btn {
-  aspect-ratio: 1;
-  border: 2.5px solid var(--border);
+  width: 44px; height: 44px;
+  border: 2px solid var(--border);
   border-radius: 50%;
   background: var(--surface);
-  font-size: 1.55rem;
+  font-size: 1.1rem;
   cursor: pointer;
   transition: all 0.18s cubic-bezier(0.34, 1.56, 0.64, 1);
   color: var(--text-2);
@@ -1464,6 +1436,7 @@ main { max-width: 800px; margin: 0 auto; padding: 24px 16px; }
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 .choice-btn:hover {
   border-color: #FBBF24;
