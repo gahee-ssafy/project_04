@@ -1,3 +1,4 @@
+import os
 from fastapi import APIRouter, HTTPException
 from schemas.auth import RegisterRequest, LoginRequest, TokenResponse
 from database import create_user, get_user_by_credentials
@@ -8,6 +9,8 @@ router = APIRouter()
 
 @router.post("/register", summary="회원가입")
 def register(req: RegisterRequest):
+    if os.getenv("ALLOW_REGISTER", "true").lower() != "true":
+        raise HTTPException(status_code=403, detail="회원가입이 비활성화되어 있습니다.")
     if not create_user(req.username, req.password):
         raise HTTPException(status_code=400, detail="이미 존재하는 아이디예요.")
     return {"message": "회원가입 완료!"}

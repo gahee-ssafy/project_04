@@ -1,3 +1,4 @@
+import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,10 +25,12 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# CORS — 개발 중 전체 허용 (배포 시 origins 제한 필요)
+# CORS
+_raw = os.getenv("ALLOWED_ORIGINS", "*")
+_origins = [o.strip() for o in _raw.split(",")] if _raw != "*" else ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
