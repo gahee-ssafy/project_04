@@ -1,7 +1,10 @@
 import axios from 'axios'
 
+const isProd = !['localhost', '127.0.0.1'].includes(window.location.hostname)
 const client = axios.create({
-  baseURL: `http://${window.location.hostname}:8000`,
+  baseURL: isProd
+    ? 'https://project04-production.up.railway.app'
+    : `http://${window.location.hostname}:8000`,
 })
 
 // 요청마다 토큰 자동 첨부
