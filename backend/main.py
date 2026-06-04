@@ -2,8 +2,6 @@ import os
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
 from database import init_db
 from routers import auth, sessions, memo, problems, exam, ai, report, quiz, admin
 from scheduler import create_scheduler
@@ -50,16 +48,6 @@ app.include_router(quiz.router,      prefix="/quiz",      tags=["OX퀴즈"])
 app.include_router(admin.router,     prefix="/admin",     tags=["관리자"])
 
 
-@app.get("/health", tags=["헬스체크"])
-def health():
+@app.get("/", tags=["헬스체크"])
+def root():
     return {"status": "ok", "message": "AI 경제학 튜터 API 서버가 실행 중이에요!"}
-
-
-# 프론트엔드 정적 파일 서빙 (빌드 결과물이 있을 때만)
-_dist = os.path.join(os.path.dirname(__file__), "dist")
-if os.path.isdir(_dist):
-    app.mount("/assets", StaticFiles(directory=os.path.join(_dist, "assets")), name="assets")
-
-    @app.get("/{full_path:path}", include_in_schema=False)
-    def serve_frontend(full_path: str):
-        return FileResponse(os.path.join(_dist, "index.html"))
