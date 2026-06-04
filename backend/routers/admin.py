@@ -1,9 +1,11 @@
 """관리자 전용 API — 문제 생성 및 저장"""
-from fastapi import APIRouter, Depends, HTTPException
+import os
+import shutil
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import Optional
 from dependencies import get_current_user
-from database import get_conn
+from database import get_conn, DB_PATH
 from services.generate import generate_ncs_questions
 
 router = APIRouter()
@@ -75,3 +77,15 @@ def save_ncs(req: SaveRequest, user=Depends(get_current_user)):
     conn.commit()
     conn.close()
     return {"saved": saved}
+
+
+# ⚠️ 임시 엔드포인트 — DB 업로드 후 삭제할 것
+@router.post("/upload-db", summary="DB 파일 업로드 (임시)")
+async def upload_db(file: UploadFile = File(...), user=Depends(get_current_user)):
+    secret = os.getenv("DB_UPLOAD_SECRET", "")
+    if not secret:
+        raise HTTPException(status_code=403, detail="DB_UPLOAD_SECRET 환경변수가 설정되지 않았습니다.")
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+    with open(DB_PATH, "wb") as f:
+        shutil.copyfileobj(file.file, f)
+    return {"message": f"DB 업로드 완료: {DB_PATH}"}
