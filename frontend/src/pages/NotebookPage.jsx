@@ -473,7 +473,10 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
   }
 
   const streamChat = async ({ userMsg = '', imgToSend = null, isOpener = false } = {}) => {
-    const baseUrl = `http://${window.location.hostname}:8000`
+    const isProd = !['localhost', '127.0.0.1'].includes(window.location.hostname)
+    const baseUrl = isProd
+      ? 'https://project04-production.up.railway.app'
+      : `http://${window.location.hostname}:8000`
     const token = localStorage.getItem('token')
 
     // 유저 메시지 먼저 UI에 추가
