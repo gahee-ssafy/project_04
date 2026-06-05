@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<title>DB ERD</title>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
+<style>
+  body { background: #1e1e2e; display: flex; justify-content: center; padding: 40px; }
+  .mermaid { background: white; padding: 24px; border-radius: 12px; max-width: 1200px; }
+</style>
+</head>
+<body>
+<div class="mermaid">
+erDiagram
+    users {
+        int id PK
+        text username
+        text password
+        datetime created_at
+    }
+    sessions {
+        int id PK
+        int user_id FK
+        text question "접두사로 타입 구분"
+        text answer
+        blob image_data
+        text image_mime
+        text embedding "미사용"
+        int problem_id FK
+        datetime created_at
+    }
+    memos {
+        int id PK
+        int user_id FK
+        int session_id FK
+        text memo
+        int rating
+        datetime updated_at
+    }
+    notebook_chats {
+        int id PK
+        int user_id FK
+        int notebook_session_id FK
+        text messages "JSON 배열"
+        datetime updated_at
+    }
+    problems {
+        int id PK
+        text topic "거시/미시 넓은 분류"
+        text question
+        text difficulty
+        text solution
+        text embedding "미사용"
+        blob image_data
+        text image_mime
+        int exam_year
+        int exam_round
+        text correct_answer
+        text concept "세부 개념 태그"
+        datetime created_at
+    }
+    exam_attempts {
+        int id PK
+        int user_id FK
+        int exam_year
+        int exam_round
+        int problem_id FK
+        text user_answer
+        int is_correct
+        datetime created_at
+    }
+    learning_reports {
+        int id PK
+        int user_id FK
+        text ai_pattern
+        text ai_advice
+        datetime generated_at
+    }
+    user_summaries {
+        int id PK
+        int user_id FK
+        text summary
+        datetime created_at
+    }
+
+    users ||--o{ sessions : "1:N"
+    users ||--o{ memos : "1:N"
+    users ||--o{ notebook_chats : "1:N"
+    users ||--o{ exam_attempts : "1:N"
+    users ||--o| learning_reports : "1:1"
+    users ||--o{ user_summaries : "1:N"
+    sessions ||--o| memos : "1:1"
+    sessions ||--o| notebook_chats : "1:1"
+    sessions }o--o| problems : "problem_id"
+    problems ||--o{ exam_attempts : "1:N"
+</div>
+<script>mermaid.initialize({ startOnLoad: true, theme: 'default' })</script>
+</body>
+</html>
