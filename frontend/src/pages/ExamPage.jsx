@@ -48,7 +48,8 @@ export default function ExamPage() {
   const [result, setResult]         = useState(null)
   const [loading, setLoading]       = useState(true)
   const [submitting, setSubmitting] = useState(false)
-  const [showSolution, setShowSolution] = useState(false)
+  const [showSolution, setShowSolution]   = useState(false)
+  const [showAnswer, setShowAnswer]       = useState(false)  // 빠른 정답확인
   const [selected, setSelected]     = useState({})
   const [saving, setSaving]         = useState(false)
   const [saved, setSaved]           = useState(false)
@@ -108,7 +109,7 @@ export default function ExamPage() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ answers, correct, current, phase, result, selected }))
   }, [answers, correct, current, phase, result, selected, loading])
 
-  useEffect(() => { setShowSolution(false) }, [current])
+  useEffect(() => { setShowSolution(false); setShowAnswer(false) }, [current])
 
   // 문제 이동 시 이전 문제 소요시간 누적
   useEffect(() => {
@@ -151,9 +152,9 @@ export default function ExamPage() {
         : { exam_year: parseInt(year), exam_round: parseInt(round), answers: answerPayload }
       const res = isNcs ? await submitNcs(payload) : await submitExam(payload)
       setResult(res.data)
-      // 오답 기본 선택 초기화 (전부 미선택)
+      // 전체 문제 미선택으로 초기화
       const initSel = {}
-      res.data.results.filter(r => !r.is_correct).forEach(r => { initSel[r.problem_id] = false })
+      res.data.results.forEach(r => { initSel[r.problem_id] = false })
       setSelected(initSel)
       setPhase(PHASE.RESULT)
     } finally {
@@ -179,10 +180,10 @@ export default function ExamPage() {
     }
   }
 
-  const toggleAll = (wrongItems) => {
-    const allSelected = wrongItems.every(r => selected[r.problem_id])
+  const toggleAll = (allItems) => {
+    const allSelected = allItems.every(r => selected[r.problem_id])
     const next = {}
-    wrongItems.forEach(r => { next[r.problem_id] = !allSelected })
+    allItems.forEach(r => { next[r.problem_id] = !allSelected })
     setSelected(prev => ({ ...prev, ...next }))
   }
 
@@ -209,21 +210,22 @@ export default function ExamPage() {
             )}
           </div>
         </div>
-        <ExamStepper phase={phase} />
         <div className="progress-bar">
           <div className="progress-fill" style={{ width: `${(answeredCount / total) * 100}%` }} />
         </div>
 
-        <div className="question-dots">
-          {problems.map((p, i) => (
-            <button
-              key={p.id}
-              className={`dot ${i === current ? 'active' : ''} ${answers[p.id] ? 'answered' : ''}`}
-              onClick={() => setCurrent(i)}
-            >
-              {i + 1}
-            </button>
-          ))}
+        <div className="question-dots-scroll">
+          <div className="question-dots">
+            {problems.map((p, i) => (
+              <button
+                key={p.id}
+                className={`dot ${i === current ? 'active' : ''} ${answers[p.id] ? 'answered' : ''}`}
+                onClick={() => setCurrent(i)}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="exam-body-layout">
@@ -241,6 +243,15 @@ export default function ExamPage() {
             </DrawingCanvas>
           </div>
           <div className="exam-choice-col">
+            {prob.correct_answer && (
+              <button
+                className="btn-quick-answer-inline"
+                onClick={() => setShowAnswer(v => !v)}
+                style={{ marginBottom: 8 }}
+              >
+                {showAnswer ? prob.correct_answer : '빠른정답'}
+              </button>
+            )}
             <div className="choice-buttons">
               {CHOICES.map((ch, i) => (
                 <button
@@ -278,21 +289,22 @@ export default function ExamPage() {
           <span className="exam-title">{examTitle}</span>
           <span className="exam-progress">{gradedCount}/{total}</span>
         </div>
-        <ExamStepper phase={phase} />
         <div className="progress-bar">
           <div className="progress-fill grading" style={{ width: `${(gradedCount / total) * 100}%` }} />
         </div>
 
-        <div className="question-dots">
-          {problems.map((p, i) => (
-            <button
-              key={p.id}
-              className={`dot ${i === current ? 'active' : ''} ${correct[p.id] === true ? 'correct' : correct[p.id] === false ? 'wrong' : ''}`}
-              onClick={() => setCurrent(i)}
-            >
-              {i + 1}
-            </button>
-          ))}
+        <div className="question-dots-scroll">
+          <div className="question-dots">
+            {problems.map((p, i) => (
+              <button
+                key={p.id}
+                className={`dot ${i === current ? 'active' : ''} ${correct[p.id] === true ? 'correct' : correct[p.id] === false ? 'wrong' : ''}`}
+                onClick={() => setCurrent(i)}
+              >
+                {i + 1}
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grading-card">
@@ -354,8 +366,9 @@ export default function ExamPage() {
   if (phase === PHASE.RESULT && result) {
     const score      = Math.round((result.correct / result.total) * 100)
     const wrongItems = result.results.filter(r => !r.is_correct)
+    const allItems   = result.results
     const selectedCount = Object.values(selected).filter(Boolean).length
-    const allSelected = wrongItems.length > 0 && wrongItems.every(r => selected[r.problem_id])
+    const allSelected = allItems.length > 0 && allItems.every(r => selected[r.problem_id])
 
     return (
       <div className="exam-page">
@@ -363,7 +376,6 @@ export default function ExamPage() {
           <span className="exam-title">{examTitle}</span>
           <span className="exam-progress">완료</span>
         </div>
-        <ExamStepper phase={phase} />
         <div className="result-header">
 
         </div>
@@ -407,8 +419,8 @@ export default function ExamPage() {
           <div className="wrong-section-header">
             <h3>문항별 결과</h3>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              {wrongItems.length > 0 && (
-                <button className="btn-select-all" onClick={() => toggleAll(wrongItems)}>
+              {allItems.length > 0 && (
+                <button className="btn-select-all" onClick={() => toggleAll(allItems)}>
                   {allSelected ? '전체 해제' : '전체 선택'}
                 </button>
               )}
@@ -433,8 +445,8 @@ export default function ExamPage() {
               return (
                 <li
                   key={r.problem_id}
-                  className={`wrong-item ${!r.is_correct && selected[r.problem_id] ? 'selected' : ''} ${isExpanded ? 'expanded' : ''}`}
-                  onClick={() => prob?.image_data && !r.is_correct && setExpanded(prev => ({ ...prev, [r.problem_id]: !prev[r.problem_id] }))}
+                  className={`wrong-item ${r.is_correct ? 'result-correct' : ''} ${selected[r.problem_id] ? 'selected' : ''} ${isExpanded ? 'expanded' : ''}`}
+                  onClick={() => prob?.image_data && setExpanded(prev => ({ ...prev, [r.problem_id]: !prev[r.problem_id] }))}
                 >
                   <div className="wrong-row">
                     <span className="wrong-num">{qNum}</span>
@@ -442,14 +454,12 @@ export default function ExamPage() {
                       {r.is_correct ? '⭕' : '❌'}
                     </span>
                     <span className="result-time">{timeStr}</span>
-                    {!r.is_correct && (
-                      <input
-                        type="checkbox"
-                        checked={!!selected[r.problem_id]}
-                        onChange={() => setSelected(prev => ({ ...prev, [r.problem_id]: !prev[r.problem_id] }))}
-                        onClick={e => e.stopPropagation()}
-                      />
-                    )}
+                    <input
+                      type="checkbox"
+                      checked={!!selected[r.problem_id]}
+                      onChange={() => setSelected(prev => ({ ...prev, [r.problem_id]: !prev[r.problem_id] }))}
+                      onClick={e => e.stopPropagation()}
+                    />
                   </div>
                   {isExpanded && prob?.image_data && (
                     <div className="wrong-img-expand">

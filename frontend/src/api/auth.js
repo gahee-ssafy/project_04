@@ -17,3 +17,5 @@ export const logout = () => {
 
 export const getUsername = () => localStorage.getItem('username')
 export const isLoggedIn = () => !!localStorage.getItem('token')
+
+export const getMyCredits = () => client.get('/auth/me').then(r => r.data.credits)

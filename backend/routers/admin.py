@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from dependencies import get_current_user
-from database import get_conn
+from database import get_conn, charge_credits, get_all_users_credits
 from services.generate import generate_ncs_questions
 
 router = APIRouter()
@@ -31,6 +31,23 @@ class SaveRequest(BaseModel):
     domain: str
     questions: list[QuestionItem]
 
+
+
+class ChargeRequest(BaseModel):
+    user_id: int
+    amount: int
+    reason: str = "관리자 충전"
+
+
+@router.get("/credits", summary="전체 유저 크레딧 현황")
+def list_credits(user=Depends(get_current_user)):
+    return {"users": get_all_users_credits()}
+
+
+@router.post("/credits/charge", summary="크레딧 충전")
+def charge(req: ChargeRequest, user=Depends(get_current_user)):
+    charge_credits(req.user_id, req.amount, req.reason)
+    return {"message": f"{req.user_id}번 유저에게 {req.amount} 크레딧 충전 완료"}
 
 
 @router.post("/generate", summary="NCS 문제 AI 생성")

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom'
-import { isLoggedIn, logout, getUsername } from './api/auth'
+import { useState, useEffect } from 'react'
+import { isLoggedIn, logout, getUsername, getMyCredits } from './api/auth'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import NotebookPage from './pages/NotebookPage'
@@ -15,12 +16,29 @@ function PrivateRoute({ children }) {
 }
 
 function Nav() {
+  const [credits, setCredits] = useState(null)
+
+  useEffect(() => {
+    if (isLoggedIn()) {
+      getMyCredits().then(setCredits).catch(() => {})
+    }
+  }, [])
+
   if (!isLoggedIn()) return null
   return (
     <nav className="navbar">
       <Link to="/" className="nav-logo">AI 경제학 튜터</Link>
       <div className="nav-links">
         <span className="nav-user">{getUsername()}</span>
+        {credits !== null && (
+          <span style={{
+            fontSize: '0.8rem',
+            color: credits <= 5 ? '#E53E3E' : 'var(--text-3)',
+            fontWeight: credits <= 5 ? 700 : 400,
+          }}>
+            💳 {credits}크레딧
+          </span>
+        )}
         <Link to="/admin" style={{ fontSize: '0.82rem', color: 'var(--text-3)' }}>관리자</Link>
         <button onClick={() => { logout(); window.location.href = '/login' }}>
           로그아웃

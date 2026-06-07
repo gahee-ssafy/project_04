@@ -7,8 +7,9 @@ const DrawingCanvas = forwardRef(function DrawingCanvas({ questionId, children }
   const lastPos    = useRef(null)
   const lastMid    = useRef(null)
 
-  // tool: 'pen' | 'highlight' | 'eraser'
-  const [tool, setTool] = useState('pen')
+  // tool: 'pen' | 'eraser'
+  const [tool, setTool]       = useState('pen')
+  const [drawMode, setDrawMode] = useState(false)  // 기본: 필기 OFF
 
   const STORAGE_KEY = `drawing_${questionId}`
 
@@ -145,24 +146,40 @@ const DrawingCanvas = forwardRef(function DrawingCanvas({ questionId, children }
     <div className="question-canvas-wrapper">
       {/* 상단 툴바 */}
       <div className="drawing-toolbar-top">
+        {/* 필기 on/off 토글 */}
         <button
-          className={`dtool-btn ${tool === 'pen' ? 'active' : ''}`}
-          onClick={() => setTool('pen')}
-          title="펜"
+          className={`dtool-btn dtool-toggle ${drawMode ? 'active' : ''}`}
+          onClick={() => setDrawMode(v => !v)}
+          title={drawMode ? '필기 끄기' : '필기 켜기'}
         >
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+          <span style={{ fontSize: '0.72rem', marginLeft: 3 }}>{drawMode ? 'ON' : 'OFF'}</span>
         </button>
-        <button
-          className={`dtool-btn ${tool === 'eraser' ? 'active' : ''}`}
-          onClick={() => setTool('eraser')}
-          title="지우개"
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 20H7L3 16l10-10 7 7-3.5 3.5"/><path d="M6.0001 17.0001L17 6"/></svg>
-        </button>
-        <div className="dtool-divider" />
-        <button className="dtool-btn dtool-clear" onClick={clearCanvas} title="전체 지우기">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
-        </button>
+
+        {/* 필기 ON일 때만 툴 표시 */}
+        {drawMode && (
+          <>
+            <div className="dtool-divider" />
+            <button
+              className={`dtool-btn ${tool === 'pen' ? 'active' : ''}`}
+              onClick={() => setTool('pen')}
+              title="펜"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+            </button>
+            <button
+              className={`dtool-btn ${tool === 'eraser' ? 'active' : ''}`}
+              onClick={() => setTool('eraser')}
+              title="지우개"
+            >
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M20 20H7L3 16l10-10 7 7-3.5 3.5"/><path d="M6.0001 17.0001L17 6"/></svg>
+            </button>
+            <div className="dtool-divider" />
+            <button className="dtool-btn dtool-clear" onClick={clearCanvas} title="전체 지우기">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/><path d="M9 6V4h6v2"/></svg>
+            </button>
+          </>
+        )}
       </div>
 
       {/* 문제 콘텐츠 + 투명 캔버스 오버레이 */}
@@ -171,6 +188,7 @@ const DrawingCanvas = forwardRef(function DrawingCanvas({ questionId, children }
         <canvas
           ref={canvasRef}
           className="drawing-canvas-overlay"
+          style={{ pointerEvents: drawMode ? 'auto' : 'none' }}
           onPointerDown={onPointerDown}
           onPointerMove={onPointerMove}
           onPointerUp={onPointerUp}

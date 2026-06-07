@@ -1,8 +1,8 @@
 import os
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from schemas.auth import RegisterRequest, LoginRequest, TokenResponse
-from database import create_user, get_user_by_credentials
-from dependencies import create_access_token
+from database import create_user, get_user_by_credentials, get_credits
+from dependencies import create_access_token, get_current_user
 
 router = APIRouter()
 
@@ -23,3 +23,8 @@ def login(req: LoginRequest):
         raise HTTPException(status_code=401, detail="아이디 또는 비밀번호가 틀렸어요.")
     token = create_access_token({"sub": str(user["id"]), "username": user["username"]})
     return {"access_token": token, "token_type": "bearer", "username": user["username"]}
+
+
+@router.get("/me", summary="내 정보 조회")
+def me(user=Depends(get_current_user)):
+    return {"id": user["id"], "username": user["username"], "credits": get_credits(user["id"])}

@@ -1,10 +1,85 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import client from '../api/client'
 
 const NCS_DOMAINS = [
   '의사소통능력','수리능력','문제해결능력','자기개발능력','자원관리능력',
   '대인관계능력','정보능력','기술능력','조직이해능력','직업윤리',
 ]
+
+function CreditsPanel() {
+  const [users,       setUsers]       = useState([])
+  const [chargeId,    setChargeId]    = useState('')
+  const [chargeAmt,   setChargeAmt]   = useState(30)
+  const [chargeMsg,   setChargeMsg]   = useState('')
+
+  const load = () => client.get('/admin/credits').then(r => setUsers(r.data.users))
+  useEffect(() => { load() }, [])
+
+  const handleCharge = async () => {
+    if (!chargeId) return
+    try {
+      await client.post('/admin/credits/charge', {
+        user_id: parseInt(chargeId), amount: parseInt(chargeAmt), reason: '관리자 충전'
+      })
+      setChargeMsg(`✅ 충전 완료`)
+      load()
+    } catch (e) {
+      setChargeMsg('❌ 충전 실패')
+    }
+  }
+
+  return (
+    <div style={{ marginBottom: 40 }}>
+      <h2 style={{ fontWeight: 800, fontSize: '1.3rem', marginBottom: 16 }}>💳 크레딧 관리</h2>
+
+      {/* 유저 목록 */}
+      <div className="admin-form-card" style={{ marginBottom: 16 }}>
+        <table style={{ width: '100%', fontSize: '0.88rem', borderCollapse: 'collapse' }}>
+          <thead>
+            <tr style={{ borderBottom: '1px solid var(--border)', textAlign: 'left' }}>
+              <th style={{ padding: '6px 8px' }}>ID</th>
+              <th style={{ padding: '6px 8px' }}>아이디</th>
+              <th style={{ padding: '6px 8px' }}>크레딧</th>
+            </tr>
+          </thead>
+          <tbody>
+            {users.map(u => (
+              <tr key={u.id} style={{ borderBottom: '1px solid var(--border)' }}>
+                <td style={{ padding: '6px 8px', color: 'var(--text-3)' }}>{u.id}</td>
+                <td style={{ padding: '6px 8px' }}>{u.username}</td>
+                <td style={{ padding: '6px 8px', fontWeight: 700, color: u.credits <= 5 ? '#E53E3E' : 'inherit' }}>
+                  {u.credits}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* 충전 */}
+      <div className="admin-form-card">
+        <div className="admin-form-row">
+          <label>유저 ID</label>
+          <input className="admin-input" type="number" value={chargeId}
+            onChange={e => setChargeId(e.target.value)} style={{ width: 80 }} />
+        </div>
+        <div className="admin-form-row">
+          <label>충전량</label>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[10, 30, 50, 100].map(n => (
+              <button key={n} className={`admin-count-btn ${chargeAmt === n ? 'active' : ''}`}
+                onClick={() => setChargeAmt(n)}>{n}</button>
+            ))}
+          </div>
+        </div>
+        <button className="admin-generate-btn" onClick={handleCharge} style={{ marginTop: 8 }}>
+          충전하기
+        </button>
+        {chargeMsg && <p style={{ marginTop: 8, fontSize: '0.85rem' }}>{chargeMsg}</p>}
+      </div>
+    </div>
+  )
+}
 
 export default function AdminPage() {
   const [agency,     setAgency]     = useState('')
@@ -72,6 +147,8 @@ export default function AdminPage() {
 
   return (
     <div style={{ maxWidth: 720, margin: '0 auto', padding: '24px 16px' }}>
+      <CreditsPanel />
+
       <h2 style={{ fontWeight: 800, fontSize: '1.3rem', marginBottom: 24, letterSpacing: '-0.02em' }}>
         NCS 문제 생성
       </h2>

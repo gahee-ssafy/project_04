@@ -117,6 +117,15 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(id)
         );
 
+        CREATE TABLE IF NOT EXISTS credit_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            amount INTEGER NOT NULL,
+            reason TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+
         CREATE TABLE IF NOT EXISTS quiz_attempts (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER NOT NULL,
@@ -149,6 +158,8 @@ def init_db():
         "ALTER TABLE exam_attempts  ADD COLUMN ncs_agency TEXT",
         "ALTER TABLE exam_attempts  ADD COLUMN ncs_domain TEXT",
         "ALTER TABLE learning_reports ADD COLUMN ai_weakness TEXT NOT NULL DEFAULT ''",
+        # 크레딧
+        "ALTER TABLE users ADD COLUMN credits INTEGER NOT NULL DEFAULT 30",
     ]
     for sql in migrations:
         try:
@@ -614,6 +625,53 @@ def save_learning_report(user_id: int, ai_pattern: str, ai_advice: str, ai_weakn
     )
     conn.commit()
     conn.close()
+
+
+# =============================================================
+# 크레딧
+# =============================================================
+def get_credits(user_id: int) -> int:
+    conn = get_conn()
+    row = conn.execute("SELECT credits FROM users WHERE id = ?", (user_id,)).fetchone()
+    conn.close()
+    return row["credits"] if row else 0
+
+
+def charge_credits(user_id: int, amount: int, reason: str = "관리자 충전"):
+    conn = get_conn()
+    conn.execute("UPDATE users SET credits = credits + ? WHERE id = ?", (amount, user_id))
+    conn.execute(
+        "INSERT INTO credit_logs (user_id, amount, reason) VALUES (?, ?, ?)",
+        (user_id, amount, reason),
+    )
+    conn.commit()
+    conn.close()
+
+
+def deduct_credits(user_id: int, amount: int, reason: str) -> bool:
+    """크레딧 차감. 잔액 부족 시 False 반환."""
+    conn = get_conn()
+    row = conn.execute("SELECT credits FROM users WHERE id = ?", (user_id,)).fetchone()
+    if not row or row["credits"] < amount:
+        conn.close()
+        return False
+    conn.execute("UPDATE users SET credits = credits - ? WHERE id = ?", (amount, user_id))
+    conn.execute(
+        "INSERT INTO credit_logs (user_id, amount, reason) VALUES (?, ?, ?)",
+        (user_id, -amount, reason),
+    )
+    conn.commit()
+    conn.close()
+    return True
+
+
+def get_all_users_credits() -> list[dict]:
+    conn = get_conn()
+    rows = conn.execute(
+        "SELECT id, username, credits, created_at FROM users ORDER BY id"
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
 
 
 # =============================================================

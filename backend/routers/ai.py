@@ -3,7 +3,7 @@ import base64
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from database import get_all_problems, save_session, get_notebook_chat, save_notebook_chat
+from database import get_all_problems, save_session, get_notebook_chat, save_notebook_chat, deduct_credits
 from dependencies import get_current_user
 from schemas.session import AskRequest
 from services.ai import ask, notebook_chat, notebook_chat_stream
@@ -13,6 +13,8 @@ router = APIRouter()
 
 @router.post("/ask", summary="자유 질문 (AI 풀이 생성)")
 def ask_question(req: AskRequest, user=Depends(get_current_user)):
+    if not deduct_credits(user["id"], 1, "AI 질문"):
+        raise HTTPException(status_code=402, detail="크레딧이 부족해요. 관리자에게 충전을 요청하세요.")
     img_bytes = base64.b64decode(req.image_data) if req.image_data else None
     answer = ask(
         req.query,
@@ -66,6 +68,12 @@ def notebook_chat_api(req: NotebookChatRequest, user=Depends(get_current_user)):
 def notebook_chat_stream_api(req: NotebookChatRequest, user=Depends(get_current_user)):
     history = get_notebook_chat(user["id"], req.session_id)
     img_bytes = base64.b64decode(req.image_data) if req.image_data else None
+
+    # opener는 규칙 기반이라 크레딧 차감 제외
+    is_opener = not history and not req.user_message and not img_bytes
+    if not is_opener:
+        if not deduct_credits(user["id"], 1, "AI 토론"):
+            raise HTTPException(status_code=402, detail="크레딧이 부족해요. 관리자에게 충전을 요청하세요.")
 
     def generate():
         full_reply = ""
