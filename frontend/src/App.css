@@ -1088,10 +1088,31 @@ main:has(.exam-page) { max-width: 100%; padding: 0; }
 
 /* ── 모의고사 풀기 ── */
 .exam-page { width: 100%; max-width: 100%; padding: 16px 16px 100px; box-sizing: border-box; overflow-x: hidden; }
+.exam-dots-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.exam-dots-nav .btn-prev,
+.exam-dots-nav .btn-next {
+  flex-shrink: 0;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: 1.5px solid var(--border);
+  background: var(--surface);
+  font-size: 1rem; cursor: pointer;
+  transition: var(--transition);
+  display: flex; align-items: center; justify-content: center;
+}
+.exam-dots-nav .btn-prev:hover:not(:disabled),
+.exam-dots-nav .btn-next:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); }
+.exam-dots-nav .btn-prev:disabled,
+.exam-dots-nav .btn-next:disabled { opacity: 0.3; cursor: default; }
 .question-dots-scroll {
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  margin-bottom: 20px;
+  flex: 1;
   padding: 4px 0 8px;
   scrollbar-width: none;
 }

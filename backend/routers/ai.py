@@ -3,7 +3,7 @@ import base64
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
-from database import get_all_problems, save_session, get_notebook_chat, save_notebook_chat, deduct_credits
+from database import get_all_problems, save_session, get_notebook_chat, save_notebook_chat, deduct_credits, get_credits
 from dependencies import get_current_user
 from schemas.session import AskRequest
 from services.ai import ask, notebook_chat, notebook_chat_stream
@@ -23,7 +23,7 @@ def ask_question(req: AskRequest, user=Depends(get_current_user)):
         chat_history=req.chat_history,
     )
     session_id = save_session(user["id"], req.query, answer, img_bytes, req.image_mime)
-    return {"answer": answer, "session_id": session_id}
+    return {"answer": answer, "session_id": session_id, "credits_remaining": get_credits(user["id"])}
 
 
 class NotebookChatRequest(BaseModel):
@@ -97,7 +97,8 @@ def notebook_chat_stream_api(req: NotebookChatRequest, user=Depends(get_current_
             new_history.append({"role": "assistant", "content": full_reply})
 
         save_notebook_chat(user["id"], req.session_id, new_history)
-        yield f"data: {json.dumps({'done': True, 'history': new_history}, ensure_ascii=False)}\n\n"
+        credits_left = get_credits(user["id"])
+        yield f"data: {json.dumps({'done': True, 'history': new_history, 'credits_remaining': credits_left}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         generate(),

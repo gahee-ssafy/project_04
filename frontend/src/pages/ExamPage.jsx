@@ -56,6 +56,7 @@ export default function ExamPage() {
   const [expanded, setExpanded]     = useState({})
   const [timeSpent, setTimeSpent]   = useState({}) // { [problem_id]: seconds }
   const startTimeRef                = useRef(Date.now())
+  const activeDotRef                = useRef(null)
 
   const STORAGE_KEY = isNcs
     ? `exam_progress_ncs_${agency}_${year}_${domain}`
@@ -109,7 +110,11 @@ export default function ExamPage() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify({ answers, correct, current, phase, result, selected }))
   }, [answers, correct, current, phase, result, selected, loading])
 
-  useEffect(() => { setShowSolution(false); setShowAnswer(false) }, [current])
+  useEffect(() => {
+    setShowSolution(false)
+    setShowAnswer(false)
+    activeDotRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' })
+  }, [current])
 
   // 문제 이동 시 이전 문제 소요시간 누적
   useEffect(() => {
@@ -214,18 +219,23 @@ export default function ExamPage() {
           <div className="progress-fill" style={{ width: `${(answeredCount / total) * 100}%` }} />
         </div>
 
-        <div className="question-dots-scroll">
-          <div className="question-dots">
-            {problems.map((p, i) => (
-              <button
-                key={p.id}
-                className={`dot ${i === current ? 'active' : ''} ${answers[p.id] ? 'answered' : ''}`}
-                onClick={() => setCurrent(i)}
-              >
-                {i + 1}
-              </button>
-            ))}
+        <div className="exam-dots-nav">
+          <button className="btn-prev" onClick={() => setCurrent(c => c - 1)} disabled={current === 0}>←</button>
+          <div className="question-dots-scroll">
+            <div className="question-dots">
+              {problems.map((p, i) => (
+                <button
+                  key={p.id}
+                  ref={i === current ? activeDotRef : null}
+                  className={`dot ${i === current ? 'active' : ''} ${answers[p.id] ? 'answered' : ''}`}
+                  onClick={() => setCurrent(i)}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
           </div>
+          <button className="btn-next" onClick={() => setCurrent(c => c + 1)} disabled={current === total - 1}>→</button>
         </div>
 
         <div className="exam-body-layout">
@@ -267,9 +277,7 @@ export default function ExamPage() {
         </div>
 
         <div className="exam-nav">
-          <button className="btn-prev" onClick={() => setCurrent(c => c - 1)} disabled={current === 0}>← 이전</button>
           <button className="btn-submit" onClick={goToGrading} disabled={answeredCount === 0}>채점하기</button>
-          <button className="btn-next" onClick={() => setCurrent(c => c + 1)} disabled={current === total - 1}>다음 →</button>
         </div>
       </div>
     )
@@ -293,18 +301,23 @@ export default function ExamPage() {
           <div className="progress-fill grading" style={{ width: `${(gradedCount / total) * 100}%` }} />
         </div>
 
-        <div className="question-dots-scroll">
-          <div className="question-dots">
-            {problems.map((p, i) => (
-              <button
-                key={p.id}
-                className={`dot ${i === current ? 'active' : ''} ${correct[p.id] === true ? 'correct' : correct[p.id] === false ? 'wrong' : ''}`}
-                onClick={() => setCurrent(i)}
-              >
-                {i + 1}
-              </button>
-            ))}
+        <div className="exam-dots-nav">
+          <button className="btn-prev" onClick={() => setCurrent(c => c - 1)} disabled={current === 0}>←</button>
+          <div className="question-dots-scroll">
+            <div className="question-dots">
+              {problems.map((p, i) => (
+                <button
+                  key={p.id}
+                  ref={i === current ? activeDotRef : null}
+                  className={`dot ${i === current ? 'active' : ''} ${correct[p.id] === true ? 'correct' : correct[p.id] === false ? 'wrong' : ''}`}
+                  onClick={() => setCurrent(i)}
+                >
+                  {i + 1}
+                </button>
+              ))}
+            </div>
           </div>
+          <button className="btn-next" onClick={() => setCurrent(c => c + 1)} disabled={current === total - 1}>→</button>
         </div>
 
         <div className="grading-card">
@@ -346,11 +359,9 @@ export default function ExamPage() {
         </div>
 
         <div className="exam-nav">
-          <button className="btn-prev" onClick={() => setCurrent(c => c - 1)} disabled={current === 0}>← 이전</button>
           <button className="btn-submit" onClick={handleSubmit} disabled={submitting}>
             {submitting ? '제출 중...' : '결과 보기'}
           </button>
-          <button className="btn-next" onClick={() => setCurrent(c => c + 1)} disabled={current === total - 1}>다음 →</button>
         </div>
       </div>
     )

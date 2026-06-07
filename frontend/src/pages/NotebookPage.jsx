@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react'
 import { useNavigate as useNav } from 'react-router-dom'
 import { getNotebook, saveMemo, deleteNotebook, notebookChat, getNotebookChatHistory } from '../api/notebook'
+import { dispatchCreditsUpdate } from '../api/auth'
 import MarkdownRenderer from '../components/MarkdownRenderer'
 import SolutionRenderer from '../components/SolutionRenderer'
 import DrawingCanvas from '../components/DrawingCanvas'
@@ -524,6 +525,7 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
           }
           if (data.done) {
             setChatHistory(data.history)
+            if (data.credits_remaining !== undefined) dispatchCreditsUpdate(data.credits_remaining)
           }
         }
       }
@@ -628,7 +630,14 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
             ) : memo ? (
               <>
                 <MarkdownRenderer className="memo-content">{memo}</MarkdownRenderer>
-                <button className="btn-memo-edit" style={{ marginTop: 8, alignSelf: 'flex-start' }} onClick={() => setEditing(true)}>수정</button>
+                <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                  <button className="btn-memo-edit" onClick={() => setEditing(true)}>수정</button>
+                  <button className="btn-cancel" onClick={async () => {
+                    if (!confirm('메모를 전체 삭제할까요?')) return
+                    setMemo('')
+                    await onSaveMemo(item.id, '')
+                  }}>전체 삭제</button>
+                </div>
               </>
             ) : (
               <button className="btn-memo-add" onClick={() => setEditing(true)}>+ 메모 추가</button>

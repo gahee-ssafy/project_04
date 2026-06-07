@@ -19,3 +19,16 @@ export const getUsername = () => localStorage.getItem('username')
 export const isLoggedIn = () => !!localStorage.getItem('token')
 
 export const getMyCredits = () => client.get('/auth/me').then(r => r.data.credits)
+
+// 크레딧 로컬 캐시
+export const getCachedCredits = () => {
+  const v = localStorage.getItem('credits')
+  return v !== null ? parseInt(v) : null
+}
+export const setCachedCredits = (n) => localStorage.setItem('credits', String(n))
+
+// AI 응답에서 크레딧 업데이트 트리거 (커스텀 이벤트)
+export const dispatchCreditsUpdate = (n) => {
+  setCachedCredits(n)
+  window.dispatchEvent(new CustomEvent('credits-update', { detail: n }))
+}

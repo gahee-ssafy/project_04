@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate, Link, useLocation, useNavigate } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { isLoggedIn, logout, getUsername, getMyCredits } from './api/auth'
+import { isLoggedIn, logout, getUsername, getMyCredits, getCachedCredits, setCachedCredits } from './api/auth'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import NotebookPage from './pages/NotebookPage'
@@ -16,12 +16,15 @@ function PrivateRoute({ children }) {
 }
 
 function Nav() {
-  const [credits, setCredits] = useState(null)
+  const [credits, setCredits] = useState(getCachedCredits())
 
   useEffect(() => {
     if (isLoggedIn()) {
-      getMyCredits().then(setCredits).catch(() => {})
+      getMyCredits().then(n => { setCredits(n); setCachedCredits(n) }).catch(() => {})
     }
+    const handler = (e) => setCredits(e.detail)
+    window.addEventListener('credits-update', handler)
+    return () => window.removeEventListener('credits-update', handler)
   }, [])
 
   if (!isLoggedIn()) return null

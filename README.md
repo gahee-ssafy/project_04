@@ -1,17 +1,14 @@
-backend : fastAPI
+```backend : fastAPI
 frontend : react
 DB : sqlite3
 LLM : gemini-flash-3
+```
 
 ```
 cd /backend
 uvicorn main:app --reload --port 8000
-```
 
 - 모바일확인용
-
-```
-
 uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
@@ -59,33 +56,14 @@ uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 
 - 회차별 그룹 보기
 - 메모 작성
-- AI 토론 (소크라테스식 문답)
-- 편집모드 (필터/정렬/그룹 선택 삭제)
-- 문제/이미지 업로드 → AI 풀이
-- 멀티모달 지원 (필기 사진도 분석)
+- AI 토론 (멀티모달 지원-필기)
+- 편집
 
 **학습일지**
 
-- 통계 (오답수, 메모수, 토론수, 학습일수)
-- 자주 다룬 개념 (오늘 개선)
-- OX 퀴즈
-- AI 패턴 분석 + 학습 방향 (Gemini, 캐시)
-
----
-
-### 🗄️ 데이터 구조 (8개 테이블)
-
-```
-users
-  └─ sessions (질문/오답노트 전체)
-       ├─ memos (학생 메모)
-       ├─ notebook_chats (AI 토론)
-       └─ problem_id → problems (문제은행)
-                            └─ concept (개념 태그)
-  └─ exam_attempts (모의고사 응시 기록)
-  └─ learning_reports (AI 분석 캐시)
-  └─ user_summaries (구버전 요약, 미사용)
-```
+- 통계
+- 자주 다룬 개념
+- AI 패턴 분석 + 학습 방향
 
 ---
 
@@ -112,14 +90,16 @@ users
 
 ### 🔜 다음 단계 후보
 
-- UX 2~5회차 개선
+- UX 4회차
 - 개념별 오답률 시각화
 - 다과목 확장
 - 실제 사용자 온보딩
 
 ### 배포
 
+```md
 - local에서 작업할 때는 한 폴더 내에서 이어달리기 식으로 수정이 가능했다. 그러나, railway, vercel로 백엔드 프론트 각각 서버에 띄우면서 즉각적인 수정이 어렵게 되었다. -> github repo로 중계! 최고!
 - 오답노트 페이지에서 data가 랜더링되지 않음[문제]
 - 프론트-문제페이지-network-console보며 에러메시지 확인 [행동]
 - 백엔드가 http://로 주소를 만들지 않도록 설정 수정 + https://로 재배포 [해결]
+```
