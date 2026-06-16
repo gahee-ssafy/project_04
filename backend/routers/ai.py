@@ -34,6 +34,7 @@ class NotebookChatRequest(BaseModel):
     user_message: str = ""  # 비어있으면 opener 요청
     image_data: str = ""    # base64 필기 이미지 (선택)
     image_mime: str = "image/png"
+    mode: str = "teacher"   # "teacher" | "student"
 
 
 @router.get("/notebook-chat/{session_id}", summary="오답노트 채팅 기록 불러오기")
@@ -82,7 +83,8 @@ def notebook_chat_stream_api(req: NotebookChatRequest, user=Depends(get_current_
         for text in notebook_chat_stream(
             req.question, req.memo, req.solution, history,
             user_message=req.user_message,
-            image_bytes=img_bytes, image_mime=req.image_mime or "image/png"
+            image_bytes=img_bytes, image_mime=req.image_mime or "image/png",
+            mode=req.mode,
         ):
             full_reply += text
             yield f"data: {json.dumps({'text': text}, ensure_ascii=False)}\n\n"

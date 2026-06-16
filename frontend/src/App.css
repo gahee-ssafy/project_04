@@ -539,6 +539,26 @@ main:has(.exam-page) { max-width: 100%; padding: 0; }
   transition: var(--transition);
 }
 .chat-input:focus { outline: none; border-color: var(--primary); background: white; box-shadow: 0 0 0 3px rgba(61,90,241,0.08); }
+/* 채팅 모드 선택 바 */
+.chat-mode-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+.btn-chat-mode {
+  padding: 5px 14px; border-radius: 20px; font-size: 0.82rem;
+  font-weight: 600; cursor: pointer; border: 1.5px solid var(--border);
+  background: var(--surface); color: var(--text-sub); transition: var(--transition);
+}
+.btn-chat-mode.active {
+  background: var(--primary); color: white; border-color: var(--primary);
+}
+.btn-chat-mode:not(.active):hover { border-color: var(--primary); color: var(--primary); }
+.chat-mode-hint {
+  font-size: 0.78rem; color: var(--primary); flex: 1;
+}
+
 .btn-chat-send {
   background: var(--primary); color: white; border: none;
   border-radius: var(--radius-sm); padding: 9px 18px; font-size: 0.88rem;

@@ -66,6 +66,27 @@ NOTEBOOK_CHAT_PROMPT = """당신은 경제학 오답노트 튜터입니다. 학�
 - 한국어로만 답변합니다.
 """
 
+NOTEBOOK_STUDENT_PROMPT = """당신은 경제학을 전혀 모르는 중학생입니다. 파인만 기법 학습을 위해 선생님(사용자)에게 개념을 배우는 역할입니다.
+
+## 당신의 캐릭터
+- 경제학 개념을 처음 듣는 중학생
+- 솔직하고 직접적으로 모른다고 말함
+- 한 번에 질문 하나만 함
+- 짧고 단순한 문장을 씀
+
+## 대화 패턴 (순환)
+1. **모르겠다 → 질문** — "그게 무슨 뜻이에요?", "왜요?", "예를 들어주세요"
+2. **이해했다 → 확인** — "아, 그러면 ~라는 말이에요?", "그럼 이 경우엔 어떻게 돼요?"
+3. **가끔 틀린 이해** — "아, 그럼 ~이라는 거죠?" (잘못 이해한 척해서 선생님이 교정하게 유도)
+
+## 금지 사항
+- 절대로 스스로 개념을 설명하거나 정답을 알려주지 마세요.
+- "잘 설명해주셨네요" 같은 과한 칭찬은 하지 마세요.
+- 한 번에 두 개 이상 질문하지 마세요.
+- 3문장을 초과하지 마세요.
+- 한국어로만 답변합니다.
+"""
+
 
 def _parse_content(response) -> str:
     content = response.content
@@ -118,7 +139,9 @@ def ask(
 # =============================================================
 # 오답노트 메모 기반 AI 토론
 # =============================================================
-def _get_notebook_opener(memo: str) -> str:
+def _get_notebook_opener(memo: str, mode: str = "teacher") -> str:
+    if mode == "student":
+        return "선생님, 저 이 문제 전혀 모르겠어요. 이 문제가 어떤 개념을 묻는 건지 설명해줄 수 있어요?"
     if memo:
         return (
             f"메모에 '{memo}' 라고 적어두셨군요. "
@@ -136,8 +159,9 @@ def _get_notebook_opener(memo: str) -> str:
 
 def _build_notebook_messages(question: str, memo: str, solution: str, history: list,
                               user_message: str = "", image_bytes: bytes = None,
-                              image_mime: str = None) -> list:
-    messages = [SystemMessage(content=NOTEBOOK_CHAT_PROMPT)]
+                              image_mime: str = None, mode: str = "teacher") -> list:
+    system_prompt = NOTEBOOK_STUDENT_PROMPT if mode == "student" else NOTEBOOK_CHAT_PROMPT
+    messages = [SystemMessage(content=system_prompt)]
     ctx_parts = [f"[문제]\n{question}"]
     if solution:
         ctx_parts.append(f"[AI 풀이]\n{solution}")
@@ -170,21 +194,21 @@ def _build_notebook_messages(question: str, memo: str, solution: str, history: l
 
 def notebook_chat(question: str, memo: str, solution: str, history: list,
                   user_message: str = "", image_bytes: bytes = None,
-                  image_mime: str = None) -> str:
+                  image_mime: str = None, mode: str = "teacher") -> str:
     if not history:
-        return _get_notebook_opener(memo)
-    messages = _build_notebook_messages(question, memo, solution, history, user_message, image_bytes, image_mime)
+        return _get_notebook_opener(memo, mode)
+    messages = _build_notebook_messages(question, memo, solution, history, user_message, image_bytes, image_mime, mode)
     return _parse_content(llm.invoke(messages))
 
 
 def notebook_chat_stream(question: str, memo: str, solution: str, history: list,
                          user_message: str = "", image_bytes: bytes = None,
-                         image_mime: str = None):
+                         image_mime: str = None, mode: str = "teacher"):
     """청크 단위로 텍스트를 yield하는 제너레이터."""
     if not history:
-        yield _get_notebook_opener(memo)
+        yield _get_notebook_opener(memo, mode)
         return
-    messages = _build_notebook_messages(question, memo, solution, history, user_message, image_bytes, image_mime)
+    messages = _build_notebook_messages(question, memo, solution, history, user_message, image_bytes, image_mime, mode)
     for chunk in llm.stream(messages):
         content = chunk.content if hasattr(chunk, "content") else ""
         if isinstance(content, list):

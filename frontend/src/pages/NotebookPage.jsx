@@ -453,6 +453,7 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
   const [chatInput, setChatInput] = useState('')
   const [chatLoading, setChatLoading] = useState(false)
   const [pendingImage, setPendingImage] = useState(null)
+  const [chatMode, setChatMode]   = useState('teacher') // 'teacher' | 'student'
   const chatBottomRef = useRef(null)
   const canvasRef = useRef(null)
   const hasMemo = !!item.memo
@@ -466,6 +467,7 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
     setShowMemo(!!item.memo)
     setEditing(false)
     setMemo(item.memo || '')
+    setChatMode('teacher')
   }, [item.id])
 
   const handleSave = async () => {
@@ -473,7 +475,7 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
     setEditing(false)
   }
 
-  const streamChat = async ({ userMsg = '', imgToSend = null, isOpener = false } = {}) => {
+  const streamChat = async ({ userMsg = '', imgToSend = null, isOpener = false, modeOverride = null } = {}) => {
     const isProd = !['localhost', '127.0.0.1'].includes(window.location.hostname)
     const baseUrl = isProd
       ? 'https://project04-production.up.railway.app'
@@ -500,6 +502,7 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
           user_message: userMsg,
           image_data: imgToSend || '',
           image_mime: 'image/png',
+          mode: modeOverride ?? chatMode,
         }),
       })
 
@@ -544,6 +547,14 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
         await streamChat({ isOpener: true })
       }
     }
+  }
+
+  const switchMode = async (newMode) => {
+    if (newMode === chatMode) return
+    setChatMode(newMode)
+    setChatHistory([])
+    setShowChat(true)
+    await streamChat({ isOpener: true, modeOverride: newMode })
   }
 
   const captureDrawing = () => {
@@ -687,12 +698,30 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
         >
           <span className="note-step-info">
             <span className="note-step-badge">{item.answer ? 'Step 3' : 'Step 2'}</span>
-            <span className="note-step-title">질문하기</span>
+            <span className="note-step-title">AI 토론</span>
           </span>
           <span className={`toggle-arrow ${showChat ? 'open' : ''}`}>›</span>
         </button>
         {showChat && (
           <div className="note-chat-panel">
+            {/* 모드 선택 */}
+            <div className="chat-mode-bar">
+              <button
+                className={`btn-chat-mode ${chatMode === 'teacher' ? 'active' : ''}`}
+                onClick={() => switchMode('teacher')}
+              >
+                선생모드
+              </button>
+              <button
+                className={`btn-chat-mode ${chatMode === 'student' ? 'active' : ''}`}
+                onClick={() => switchMode('student')}
+              >
+                생선모드 🐟
+              </button>
+              {chatMode === 'student' && (
+                <span className="chat-mode-hint">AI가 학생이 되어 질문해요. 개념을 설명해보세요!</span>
+              )}
+            </div>
             <div className="chat-messages">
               {chatHistory.map((msg, i) => {
                 const memoMatch = msg.role === 'assistant' && msg.content.match(/📝 메모 제안[:：]\s*(.+)/s)
