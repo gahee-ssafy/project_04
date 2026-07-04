@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import Optional
 from dependencies import get_current_user
-from database import get_conn, charge_credits, get_all_users_credits
+from database import get_conn, _cursor, charge_credits, get_all_users_credits
 from services.generate import generate_ncs_questions
 
 router = APIRouter()
@@ -67,17 +67,17 @@ def generate(req: GenerateRequest, user=Depends(get_current_user)):
 @router.post("/save-ncs", summary="생성된 NCS 문제 저장")
 def save_ncs(req: SaveRequest, user=Depends(get_current_user)):
     conn = get_conn()
+    cur = _cursor(conn)
     saved = 0
     for q in req.questions:
-        # ①②③④ 선지를 question text에 합쳐서 저장
         choices_text = "\n".join(f"{k} {v}" for k, v in q.choices.items())
         full_question = f"{q.question}\n{choices_text}"
 
-        conn.execute(
+        cur.execute(
             """INSERT INTO problems
                (topic, question, difficulty, correct_answer, solution,
                 exam_type, ncs_agency, ncs_domain, exam_year)
-               VALUES (?, ?, ?, ?, ?, 'ncs', ?, ?, ?)""",
+               VALUES (%s, %s, %s, %s, %s, 'ncs', %s, %s, %s)""",
             (
                 req.domain,
                 full_question,
@@ -91,5 +91,6 @@ def save_ncs(req: SaveRequest, user=Depends(get_current_user)):
         )
         saved += 1
     conn.commit()
+    cur.close()
     conn.close()
     return {"saved": saved}

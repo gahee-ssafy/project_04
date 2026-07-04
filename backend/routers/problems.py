@@ -36,9 +36,12 @@ def set_question_text(
 
     concept = extract_concept(body.question_text)
     if concept:
+        from database import _cursor
         conn = get_conn()
-        conn.execute("UPDATE problems SET concept = ? WHERE id = ?", (concept, problem_id))
+        cur = _cursor(conn)
+        cur.execute("UPDATE problems SET concept = %s WHERE id = %s", (concept, problem_id))
         conn.commit()
+        cur.close()
         conn.close()
 
     return {"ok": True, "concept": concept}
