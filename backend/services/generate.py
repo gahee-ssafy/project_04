@@ -1,8 +1,7 @@
 """NCS 문제 AI 생성 서비스"""
 import json
 import re
-from services.ai import llm
-from langchain_core.messages import HumanMessage, SystemMessage
+from services.ai import _chat
 
 GENERATE_PROMPT = """당신은 NCS 직업기초능력 문제 출제 전문가입니다.
 주어진 예시 문제들의 스타일, 난이도, 출제 패턴을 분석하여 동일한 수준의 새 문제를 만드세요.
@@ -51,14 +50,11 @@ def generate_ncs_questions(
 예시 문제의 문장이나 선지를 그대로 사용하지 말고, 완전히 새로운 내용으로 만드세요."""
 
     messages = [
-        SystemMessage(content=GENERATE_PROMPT),
-        HumanMessage(content=user_prompt),
+        {"role": "system", "content": GENERATE_PROMPT},
+        {"role": "user", "content": user_prompt},
     ]
 
-    response = llm.invoke(messages)
-    content = response.content if hasattr(response, "content") else str(response)
-    if isinstance(content, list):
-        content = "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
+    content = _chat(messages)
 
     # JSON 추출
     json_match = re.search(r'```json\s*([\s\S]+?)\s*```', content)
