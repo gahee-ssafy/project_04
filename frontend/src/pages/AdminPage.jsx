@@ -87,28 +87,44 @@ export default function AdminPage() {
   const [domain,     setDomain]     = useState(NCS_DOMAINS[0])
   const [sampleText, setSampleText] = useState('')
   const [count,      setCount]      = useState(5)
+  const [inputMode,  setInputMode]  = useState('text')  // 'text' | 'pdf'
+  const [pdfFile,    setPdfFile]    = useState(null)
 
   const [generating, setGenerating] = useState(false)
-  const [generated,  setGenerated]  = useState([])  // 생성된 문제들
-  const [checked,    setChecked]    = useState({})   // 저장할 문제 선택
+  const [generated,  setGenerated]  = useState([])
+  const [checked,    setChecked]    = useState({})
   const [saving,     setSaving]     = useState(false)
   const [savedCount, setSavedCount] = useState(null)
   const [error,      setError]      = useState('')
 
   const handleGenerate = async () => {
     if (!agency.trim()) return setError('대행사를 입력하세요.')
-    if (!sampleText.trim()) return setError('예시 문제를 입력하세요.')
     setError('')
     setGenerating(true)
     setGenerated([])
     setSavedCount(null)
     try {
-      const res = await client.post('/admin/generate', {
-        agency, exam_year: parseInt(year), domain, sample_text: sampleText, count,
-      })
-      const qs = res.data.questions
+      let qs
+      if (inputMode === 'pdf') {
+        if (!pdfFile) return setError('PDF 파일을 선택하세요.')
+        const form = new FormData()
+        form.append('file', pdfFile)
+        form.append('agency', agency)
+        form.append('exam_year', parseInt(year))
+        form.append('domain', domain)
+        form.append('count', count)
+        const res = await client.post('/admin/upload-pdf', form, {
+          headers: { 'Content-Type': 'multipart/form-data' },
+        })
+        qs = res.data.questions
+      } else {
+        if (!sampleText.trim()) return setError('예시 문제를 입력하세요.')
+        const res = await client.post('/admin/generate', {
+          agency, exam_year: parseInt(year), domain, sample_text: sampleText, count,
+        })
+        qs = res.data.questions
+      }
       setGenerated(qs)
-      // 전체 선택
       const all = {}
       qs.forEach((_, i) => { all[i] = true })
       setChecked(all)
@@ -194,23 +210,56 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* 샘플 문제 */}
+      {/* 입력 방식 선택 */}
       <div className="admin-form-card">
-        <div style={{ marginBottom: 8 }}>
-          <label style={{ fontWeight: 700, fontSize: '0.88rem' }}>
-            예시 문제 (2~3개 붙여넣기)
-          </label>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 2 }}>
-            문제 이미지를 Claude에게 보내면 텍스트로 추출해줘요. 그걸 여기 붙여넣으세요.
-          </p>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
+          <button
+            className={`admin-count-btn ${inputMode === 'text' ? 'active' : ''}`}
+            onClick={() => setInputMode('text')}
+          >✏️ 텍스트 입력</button>
+          <button
+            className={`admin-count-btn ${inputMode === 'pdf' ? 'active' : ''}`}
+            onClick={() => setInputMode('pdf')}
+          >📄 PDF 업로드</button>
         </div>
-        <textarea
-          className="admin-textarea"
-          placeholder={`예시:\n1. 다음 중 의사소통의 기본 원칙으로 옳지 않은 것은?\n① 명확성 ② 간결성 ③ 복잡성 ④ 일관성\n정답: ③\n\n2. ...`}
-          value={sampleText}
-          onChange={e => setSampleText(e.target.value)}
-          rows={10}
-        />
+
+        {inputMode === 'text' ? (
+          <>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontWeight: 700, fontSize: '0.88rem' }}>예시 문제 (2~3개 붙여넣기)</label>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 2 }}>
+                문제 이미지를 Claude에게 보내면 텍스트로 추출해줘요. 그걸 여기 붙여넣으세요.
+              </p>
+            </div>
+            <textarea
+              className="admin-textarea"
+              placeholder={`예시:\n1. 다음 중 의사소통의 기본 원칙으로 옳지 않은 것은?\n① 명확성 ② 간결성 ③ 복잡성 ④ 일관성\n정답: ③\n\n2. ...`}
+              value={sampleText}
+              onChange={e => setSampleText(e.target.value)}
+              rows={10}
+            />
+          </>
+        ) : (
+          <>
+            <div style={{ marginBottom: 8 }}>
+              <label style={{ fontWeight: 700, fontSize: '0.88rem' }}>PDF 파일 업로드</label>
+              <p style={{ fontSize: '0.78rem', color: 'var(--text-3)', marginTop: 2 }}>
+                봉투모의고사 PDF를 올리면 텍스트를 추출해서 AI가 유사 문제를 생성해요.
+              </p>
+            </div>
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={e => setPdfFile(e.target.files[0])}
+              style={{ fontSize: '0.88rem' }}
+            />
+            {pdfFile && (
+              <p style={{ marginTop: 8, fontSize: '0.82rem', color: 'var(--text-3)' }}>
+                📎 {pdfFile.name} ({(pdfFile.size / 1024).toFixed(0)} KB)
+              </p>
+            )}
+          </>
+        )}
       </div>
 
       {error && <p style={{ color: '#E53E3E', fontSize: '0.85rem', marginBottom: 12 }}>{error}</p>}
