@@ -329,15 +329,10 @@ def _build_data_section(stats, concepts, quotes, notebooks, user_id: int, weak_c
 
 
 def _call_gemini(data_section: str) -> tuple[str, str]:
-    """Gemini 호출 → (ai_pattern, ai_advice) 반환."""
-    from services.ai import llm, _normalize_math
-    from langchain_core.messages import HumanMessage
+    from services.ai import _chat, _normalize_math
 
     prompt = _AI_PROMPT.format(data=data_section)
-    response = llm.invoke([HumanMessage(content=prompt)])
-    raw = response.content
-    if isinstance(raw, list):
-        raw = "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in raw)
+    raw = _chat([{"role": "user", "content": prompt}])
 
     try:
         m = re.search(r'\{[\s\S]*\}', raw)

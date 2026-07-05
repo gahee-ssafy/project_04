@@ -15,6 +15,12 @@ function PrivateRoute({ children }) {
   return isLoggedIn() ? children : <Navigate to="/login" replace />
 }
 
+function AdminRoute({ children }) {
+  if (!isLoggedIn()) return <Navigate to="/login" replace />
+  if (getUsername() !== 'user01') return <Navigate to="/" replace />
+  return children
+}
+
 function Nav() {
   const [credits, setCredits] = useState(getCachedCredits())
 
@@ -42,7 +48,9 @@ function Nav() {
             💳 {credits}크레딧
           </span>
         )}
-        <Link to="/admin" style={{ fontSize: '0.82rem', color: 'var(--text-3)' }}>관리자</Link>
+        {getUsername() === 'user01' && (
+          <Link to="/admin" style={{ fontSize: '0.82rem', color: 'var(--text-3)' }}>관리자</Link>
+        )}
         <button onClick={() => { logout(); window.location.href = '/login' }}>
           로그아웃
         </button>
@@ -99,7 +107,7 @@ export default function App() {
           <Route path="/notebook/print/civil/:subject" element={<PrivateRoute><NotebookPrintPage /></PrivateRoute>} />
           <Route path="/notebook/print/ncs/:agency" element={<PrivateRoute><NotebookPrintPage /></PrivateRoute>} />
           <Route path="/notebook/print/:group" element={<PrivateRoute><NotebookPrintPage /></PrivateRoute>} />
-          <Route path="/admin" element={<PrivateRoute><AdminPage /></PrivateRoute>} />
+          <Route path="/admin" element={<AdminRoute><AdminPage /></AdminRoute>} />
           <Route path="/" element={<PrivateRoute><HomePage /></PrivateRoute>} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>

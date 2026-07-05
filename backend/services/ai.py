@@ -1,47 +1,40 @@
-"""Gemini LLM + 임베딩 서비스 (search.py에서 이식)"""
+"""MonoGPT API 기반 AI 서비스"""
 import os
-import json
+import uuid
 import base64
+import re
+import httpx
 from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage, SystemMessage, AIMessage
-from google import genai as google_genai
 
 load_dotenv()
 
-_api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.5-flash",
-    temperature=0.3,
-    google_api_key=_api_key,
-)
-_embed_client = google_genai.Client(api_key=_api_key)
-_EMBED_MODEL = "models/gemini-embedding-exp-03-07"
+_API_KEY = os.environ.get("MONOGPT_API_KEY")
+_BASE_URL = "https://monogpt.kr/api/v1"
+_MODEL = "gpt-5.1"
 
 # =============================================================
 # 시스템 프롬프트
 # =============================================================
-TUTOR_PROMPT = """당신은 학생 옆에서 함께 문제를 보는 경제학 전문 튜터입니다.
+TUTOR_PROMPT = """당신은 학생 옆에서 함께 문제를 보는 NCS 직업기초능력 전문 튜터입니다.
 
 ## 응답 원칙
 1. 이미지가 있으면 학생의 필기, 동그라미, 취소선, 메모까지 꼼꼼히 읽으세요.
 2. 학생이 틀리기 쉬운 포인트, 헷갈리기 쉬운 개념을 우선적으로 깊이 설명하세요.
-3. 수식은 LaTeX 형식으로 작성하세요. 인라인: $수식$, 블록: $$수식$$
-4. 응답 구조: 주제 소개 → 정답 확인 → 선지별 해설 (함정 중심)
-5. 딱딱한 강의체 금지. 공감하는 말투로 시작하세요.
-6. 면책 문구는 절대 포함하지 마세요.
+3. 응답 구조: 주제 소개 → 정답 확인 → 선지별 해설 (함정 중심)
+4. 딱딱한 강의체 금지. 공감하는 말투로 시작하세요.
+5. 면책 문구는 절대 포함하지 마세요.
 
 항상 한국어로 답변합니다.
 """
 
-NOTEBOOK_CHAT_PROMPT = """당신은 경제학 오답노트 튜터입니다. 학생이 틀린 문제를 스스로 이해할 수 있도록 돕습니다.
+NOTEBOOK_CHAT_PROMPT = """당신은 NCS 직업기초능력 오답노트 튜터입니다. 학생이 틀린 문제를 스스로 이해할 수 있도록 돕습니다.
 
 ## 입력 유형 판단 (먼저 판단하세요)
 
-**① 학생이 개념/답을 설명하는 경우** (예: "공리주의는 효용의 합이에요", "이 문제는 ~때문에 틀렸어요")
+**① 학생이 개념/답을 설명하는 경우** (예: "의사소통은 ~이에요", "이 문제는 ~때문에 틀렸어요")
 → 아래 판별 구조로 응답
 
-**② 학생이 질문하는 경우** (예: "후생함수가 뭐예요?", "왜 틀렸나요?")
+**② 학생이 질문하는 경우** (예: "이 개념이 뭐예요?", "왜 틀렸나요?")
 → 판별 없이 바로 설명
 
 **③ 학생이 요청하는 경우** (예: "메모로 만들어주세요", "정리해줘")
@@ -62,14 +55,13 @@ NOTEBOOK_CHAT_PROMPT = """당신은 경제학 오답노트 튜터입니다. 학�
 ## 금지 사항
 - 한 번에 여러 질문을 하지 마세요.
 - 3~5문장을 초과하지 마세요.
-- 수식은 LaTeX: 인라인 $수식$, 블록 $$수식$$
 - 한국어로만 답변합니다.
 """
 
-NOTEBOOK_STUDENT_PROMPT = """당신은 경제학을 전혀 모르는 중학생입니다. 파인만 기법 학습을 위해 선생님(사용자)에게 개념을 배우는 역할입니다.
+NOTEBOOK_STUDENT_PROMPT = """당신은 NCS 직업기초능력을 전혀 모르는 중학생입니다. 파인만 기법 학습을 위해 선생님(사용자)에게 개념을 배우는 역할입니다.
 
 ## 당신의 캐릭터
-- 경제학 개념을 처음 듣는 중학생
+- NCS 개념을 처음 듣는 중학생
 - 솔직하고 직접적으로 모른다고 말함
 - 한 번에 질문 하나만 함
 - 짧고 단순한 문장을 씀
@@ -88,21 +80,57 @@ NOTEBOOK_STUDENT_PROMPT = """당신은 경제학을 전혀 모르는 중학생�
 """
 
 
-def _parse_content(response) -> str:
-    content = response.content
-    if isinstance(content, list):
-        text = "".join([c.get("text", "") if isinstance(c, dict) else str(c) for c in content])
-    else:
-        text = content
-    return _normalize_math(text)
+# =============================================================
+# MonoGPT HTTP 호출
+# =============================================================
+def _chat(messages: list[dict]) -> str:
+    headers = {
+        "Authorization": f"Bearer {_API_KEY}",
+        "Content-Type": "application/json",
+        "Idempotency-Key": str(uuid.uuid4()),
+    }
+    body = {"model": _MODEL, "messages": messages}
+    resp = httpx.post(f"{_BASE_URL}/chat", headers=headers, json=body, timeout=60)
+    resp.raise_for_status()
+    return resp.json().get("reply", "")
 
 
 def _normalize_math(text: str) -> str:
-    """Gemini가 \(...\) 또는 \[...\] 로 출력한 수식을 $...$, $$...$$ 로 변환."""
-    import re
     text = re.sub(r'\\\[([\s\S]+?)\\\]', lambda m: f'$${m.group(1)}$$', text)
     text = re.sub(r'\\\(([\s\S]+?)\\\)', lambda m: f'${m.group(1)}$', text)
     return text
+
+
+def _build_messages(system: str, turns: list[dict]) -> list[dict]:
+    msgs = [{"role": "system", "content": system}]
+    msgs.extend(turns)
+    return msgs
+
+
+# generate.py 에서 llm.invoke(messages) 형태로 쓰므로 호환 래퍼 제공
+class _LLMCompat:
+    def invoke(self, lc_messages) -> "_FakeResponse":
+        msgs = []
+        for m in lc_messages:
+            role = "system" if m.__class__.__name__ == "SystemMessage" else \
+                   "assistant" if m.__class__.__name__ == "AIMessage" else "user"
+            content = m.content
+            if isinstance(content, list):
+                content = "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
+            msgs.append({"role": role, "content": content})
+        reply = _chat(msgs)
+        return _FakeResponse(reply)
+
+    def stream(self, lc_messages):
+        yield self.invoke(lc_messages)
+
+
+class _FakeResponse:
+    def __init__(self, text: str):
+        self.content = text
+
+
+llm = _LLMCompat()
 
 
 # =============================================================
@@ -114,30 +142,24 @@ def ask(
     image_mime: str = None,
     chat_history: list = None,
 ) -> str:
-    messages = [SystemMessage(content=TUTOR_PROMPT)]
-
+    turns = []
     if chat_history:
         for turn in chat_history:
-            if turn["role"] == "user":
-                messages.append(HumanMessage(content=turn["content"]))
-            else:
-                messages.append(AIMessage(content=turn["content"]))
+            turns.append({"role": turn["role"], "content": turn["content"]})
 
     if image_bytes:
         img_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        human = HumanMessage(content=[
-            {"type": "image_url", "image_url": {"url": f"data:{image_mime};base64,{img_b64}"}},
-            {"type": "text", "text": query},
-        ])
+        content = f"data:{image_mime};base64,{img_b64}\n\n{query}"
+        turns.append({"role": "user", "content": content})
     else:
-        human = HumanMessage(content=query)
+        turns.append({"role": "user", "content": query})
 
-    messages.append(human)
-    return _parse_content(llm.invoke(messages))
+    msgs = _build_messages(TUTOR_PROMPT, turns)
+    return _normalize_math(_chat(msgs))
 
 
 # =============================================================
-# 오답노트 메모 기반 AI 토론
+# 오답노트 AI 토론
 # =============================================================
 def _get_notebook_opener(memo: str, mode: str = "teacher") -> str:
     if mode == "student":
@@ -157,39 +179,29 @@ def _get_notebook_opener(memo: str, mode: str = "teacher") -> str:
     )
 
 
-def _build_notebook_messages(question: str, memo: str, solution: str, history: list,
-                              user_message: str = "", image_bytes: bytes = None,
-                              image_mime: str = None, mode: str = "teacher") -> list:
-    system_prompt = NOTEBOOK_STUDENT_PROMPT if mode == "student" else NOTEBOOK_CHAT_PROMPT
-    messages = [SystemMessage(content=system_prompt)]
+def _build_notebook_turns(question: str, memo: str, solution: str, history: list,
+                           user_message: str = "", image_bytes: bytes = None,
+                           image_mime: str = None) -> list[dict]:
+    turns = []
     ctx_parts = [f"[문제]\n{question}"]
     if solution:
         ctx_parts.append(f"[AI 풀이]\n{solution}")
     if memo:
         ctx_parts.append(f"[학생 메모]\n{memo}")
-    messages.append(HumanMessage(content="\n\n".join(ctx_parts)))
-
-    # history 이어 붙이기
-    messages.append(AIMessage(content=history[0]["content"]))  # opener
+    turns.append({"role": "user", "content": "\n\n".join(ctx_parts)})
+    turns.append({"role": "assistant", "content": history[0]["content"]})
     for turn in history[1:]:
-        if turn["role"] == "user":
-            messages.append(HumanMessage(content=turn["content"]))
-        else:
-            messages.append(AIMessage(content=turn["content"]))
+        turns.append({"role": turn["role"], "content": turn["content"]})
 
-    # 현재 유저 메시지 추가
     if image_bytes:
         img_b64 = base64.b64encode(image_bytes).decode("utf-8")
         mime = image_mime or "image/png"
-        content = [
-            {"type": "image_url", "image_url": {"url": f"data:{mime};base64,{img_b64}"}},
-            {"type": "text", "text": user_message or "(학생이 필기한 내용입니다. 이 필기를 보고 이해도를 파악해서 피드백해주세요.)"},
-        ]
-        messages.append(HumanMessage(content=content))
+        content = f"data:{mime};base64,{img_b64}\n\n{user_message or '(학생이 필기한 내용입니다. 이 필기를 보고 이해도를 파악해서 피드백해주세요.)'}"
+        turns.append({"role": "user", "content": content})
     elif user_message:
-        messages.append(HumanMessage(content=user_message))
+        turns.append({"role": "user", "content": user_message})
 
-    return messages
+    return turns
 
 
 def notebook_chat(question: str, memo: str, solution: str, history: list,
@@ -197,26 +209,22 @@ def notebook_chat(question: str, memo: str, solution: str, history: list,
                   image_mime: str = None, mode: str = "teacher") -> str:
     if not history:
         return _get_notebook_opener(memo, mode)
-    messages = _build_notebook_messages(question, memo, solution, history, user_message, image_bytes, image_mime, mode)
-    return _parse_content(llm.invoke(messages))
+    system = NOTEBOOK_STUDENT_PROMPT if mode == "student" else NOTEBOOK_CHAT_PROMPT
+    turns = _build_notebook_turns(question, memo, solution, history, user_message, image_bytes, image_mime)
+    msgs = _build_messages(system, turns)
+    return _normalize_math(_chat(msgs))
 
 
 def notebook_chat_stream(question: str, memo: str, solution: str, history: list,
                          user_message: str = "", image_bytes: bytes = None,
                          image_mime: str = None, mode: str = "teacher"):
-    """청크 단위로 텍스트를 yield하는 제너레이터."""
     if not history:
         yield _get_notebook_opener(memo, mode)
         return
-    messages = _build_notebook_messages(question, memo, solution, history, user_message, image_bytes, image_mime, mode)
-    for chunk in llm.stream(messages):
-        content = chunk.content if hasattr(chunk, "content") else ""
-        if isinstance(content, list):
-            text = "".join(c.get("text", "") if isinstance(c, dict) else str(c) for c in content)
-        else:
-            text = content if isinstance(content, str) else ""
-        if text:
-            yield text
+    system = NOTEBOOK_STUDENT_PROMPT if mode == "student" else NOTEBOOK_CHAT_PROMPT
+    turns = _build_notebook_turns(question, memo, solution, history, user_message, image_bytes, image_mime)
+    msgs = _build_messages(system, turns)
+    yield _normalize_math(_chat(msgs))
 
 
 # =============================================================
@@ -249,19 +257,5 @@ def summarize_history(sessions: list) -> str:
 
 한국어로 간결하게 작성해주세요."""
 
-    return _parse_content(llm.invoke([HumanMessage(content=prompt)]))
+    return _normalize_math(_chat([{"role": "user", "content": prompt}]))
 
-
-# =============================================================
-# 임베딩
-# =============================================================
-def get_embedding(text: str) -> list:
-    result = _embed_client.models.embed_content(model=_EMBED_MODEL, contents=text)
-    return result.embeddings[0].values
-
-
-def cosine_similarity(a: list, b: list) -> float:
-    dot = sum(x * y for x, y in zip(a, b))
-    norm_a = sum(x ** 2 for x in a) ** 0.5
-    norm_b = sum(x ** 2 for x in b) ** 0.5
-    return 0.0 if (norm_a == 0 or norm_b == 0) else dot / (norm_a * norm_b)
