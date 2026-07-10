@@ -2,26 +2,35 @@ import json
 import hashlib
 import base64
 import os
-import psycopg2
-import psycopg2.extras
-import psycopg2.errors
+import sqlite3
 from dotenv import load_dotenv
 
 load_dotenv()
 
-DATABASE_URL = os.environ.get(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/app",
-)
+DATABASE_URL = os.environ.get("DATABASE_URL", "")
+USE_SQLITE = not DATABASE_URL or DATABASE_URL.startswith("sqlite")
+SQLITE_PATH = os.path.join(os.path.dirname(__file__), "local.db")
 
 
 def get_conn():
-    conn = psycopg2.connect(DATABASE_URL)
-    return conn
+    if USE_SQLITE:
+        conn = sqlite3.connect(SQLITE_PATH)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("PRAGMA foreign_keys=ON")
+        return conn
+    else:
+        import psycopg2
+        import psycopg2.extras
+        return psycopg2.connect(DATABASE_URL)
 
 
 def _cursor(conn):
-    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+    if USE_SQLITE:
+        return conn.cursor()
+    else:
+        import psycopg2.extras
+        return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
 
 def row_to_dict(row) -> dict:
@@ -29,16 +38,64 @@ def row_to_dict(row) -> dict:
         return None
     d = dict(row)
     if "image_data" in d and d["image_data"]:
-        d["image_data"] = base64.b64encode(bytes(d["image_data"])).decode("utf-8")
+        if isinstance(d["image_data"], (bytes, bytearray)):
+            d["image_data"] = base64.b64encode(bytes(d["image_data"])).decode("utf-8")
     return d
+
+
+def _fix(sql: str) -> str:
+    if not USE_SQLITE:
+        return sql
+    import re
+    sql = sql.replace("%s", "?")
+    sql = re.sub(r'\bSERIAL PRIMARY KEY\b', 'INTEGER PRIMARY KEY AUTOINCREMENT', sql)
+    sql = re.sub(r'\bBYTEA\b', 'BLOB', sql, flags=re.IGNORECASE)
+    sql = re.sub(r"NOW\(\)\s*-\s*INTERVAL\s*'(\d+)\s*days'", r"datetime('now', '-\1 days')", sql)
+    sql = re.sub(r"NOW\(\)", "datetime('now')", sql)
+    return sql
+
+
+def _insert_returning(cur, conn, sql: str, params: tuple):
+    """INSERT ... RETURNING id 처리 — SQLite는 lastrowid 사용."""
+    if USE_SQLITE:
+        sql = _fix(sql.split("RETURNING")[0].strip())
+        cur.execute(sql, params)
+        return cur.lastrowid
+    else:
+        cur.execute(sql, params)
+        return cur.fetchone()["id"]
+
+
+def _upsert(cur, table: str, conflict_cols: list, data: dict):
+    """ON CONFLICT DO UPDATE 처리."""
+    cols = list(data.keys())
+    vals = list(data.values())
+    ph = "?" if USE_SQLITE else "%s"
+    placeholders = ", ".join([ph] * len(cols))
+    col_str = ", ".join(cols)
+
+    if USE_SQLITE:
+        update_str = ", ".join(
+            f"{c} = excluded.{c}" for c in cols if c not in conflict_cols
+        )
+        conflict_str = ", ".join(conflict_cols)
+        sql = f"""INSERT INTO {table} ({col_str}) VALUES ({placeholders})
+                  ON CONFLICT({conflict_str}) DO UPDATE SET {update_str}"""
+    else:
+        update_str = ", ".join(
+            f"{c} = EXCLUDED.{c}" for c in cols if c not in conflict_cols
+        )
+        conflict_str = ", ".join(conflict_cols)
+        sql = f"""INSERT INTO {table} ({col_str}) VALUES ({placeholders})
+                  ON CONFLICT ({conflict_str}) DO UPDATE SET {update_str}"""
+    cur.execute(sql, vals)
 
 
 def init_db():
     conn = get_conn()
     cur = _cursor(conn)
 
-    # 테이블 생성 (모든 컬럼 포함)
-    cur.execute("""
+    cur.execute(_fix("""
         CREATE TABLE IF NOT EXISTS users (
             id SERIAL PRIMARY KEY,
             username TEXT UNIQUE NOT NULL,
@@ -46,9 +103,9 @@ def init_db():
             credits INTEGER NOT NULL DEFAULT 30,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """))
 
-    cur.execute("""
+    cur.execute(_fix("""
         CREATE TABLE IF NOT EXISTS sessions (
             id SERIAL PRIMARY KEY,
             user_id INTEGER REFERENCES users(id),
@@ -60,10 +117,9 @@ def init_db():
             problem_id INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """))
 
-
-    cur.execute("""
+    cur.execute(_fix("""
         CREATE TABLE IF NOT EXISTS problems (
             id SERIAL PRIMARY KEY,
             topic TEXT NOT NULL,
@@ -83,9 +139,9 @@ def init_db():
             ncs_domain TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """))
 
-    cur.execute("""
+    cur.execute(_fix("""
         CREATE TABLE IF NOT EXISTS memos (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id),
@@ -95,9 +151,9 @@ def init_db():
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             UNIQUE (user_id, session_id)
         )
-    """)
+    """))
 
-    cur.execute("""
+    cur.execute(_fix("""
         CREATE TABLE IF NOT EXISTS exam_attempts (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id),
@@ -111,20 +167,21 @@ def init_db():
             ncs_domain TEXT,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """))
 
-    cur.execute("""
+    cur.execute(_fix("""
         CREATE TABLE IF NOT EXISTS notebook_chats (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id),
             notebook_session_id INTEGER NOT NULL REFERENCES sessions(id),
+            mode TEXT NOT NULL DEFAULT 'teacher',
             messages TEXT NOT NULL DEFAULT '[]',
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_id, notebook_session_id)
+            UNIQUE(user_id, notebook_session_id, mode)
         )
-    """)
+    """))
 
-    cur.execute("""
+    cur.execute(_fix("""
         CREATE TABLE IF NOT EXISTS learning_reports (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id),
@@ -135,10 +192,9 @@ def init_db():
             weekly_at TIMESTAMP,
             generated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """))
 
-
-    cur.execute("""
+    cur.execute(_fix("""
         CREATE TABLE IF NOT EXISTS quiz_attempts (
             id SERIAL PRIMARY KEY,
             user_id INTEGER NOT NULL REFERENCES users(id),
@@ -146,7 +202,7 @@ def init_db():
             is_correct INTEGER NOT NULL,
             answered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
-    """)
+    """))
 
     conn.commit()
     cur.close()
@@ -165,14 +221,14 @@ def create_user(username: str, password: str) -> bool:
         conn = get_conn()
         cur = _cursor(conn)
         cur.execute(
-            "INSERT INTO users (username, password) VALUES (%s, %s)",
+            _fix("INSERT INTO users (username, password) VALUES (%s, %s)"),
             (username, hash_password(password)),
         )
         conn.commit()
         cur.close()
         conn.close()
         return True
-    except psycopg2.errors.UniqueViolation:
+    except Exception:
         return False
 
 
@@ -180,7 +236,7 @@ def get_user_by_credentials(username: str, password: str) -> dict | None:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "SELECT * FROM users WHERE username = %s AND password = %s",
+        _fix("SELECT * FROM users WHERE username = %s AND password = %s"),
         (username, hash_password(password)),
     )
     row = cur.fetchone()
@@ -202,7 +258,7 @@ def get_all_user_ids() -> list[int]:
 def get_user_by_id(user_id: int) -> dict | None:
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute("SELECT * FROM users WHERE id = %s", (user_id,))
+    cur.execute(_fix("SELECT * FROM users WHERE id = %s"), (user_id,))
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -221,12 +277,11 @@ def save_session(
 ) -> int:
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute(
+    session_id = _insert_returning(cur, conn,
         """INSERT INTO sessions (user_id, question, answer, image_data, image_mime)
            VALUES (%s, %s, %s, %s, %s) RETURNING id""",
         (user_id, question, answer, image_data, image_mime),
     )
-    session_id = cur.fetchone()["id"]
     conn.commit()
     cur.close()
     conn.close()
@@ -237,7 +292,7 @@ def get_sessions(user_id: int) -> list[dict]:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "SELECT * FROM sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT 50",
+        _fix("SELECT * FROM sessions WHERE user_id = %s ORDER BY created_at DESC LIMIT 50"),
         (user_id,),
     )
     rows = cur.fetchall()
@@ -250,7 +305,7 @@ def get_all_sessions_for_summary(user_id: int) -> list[dict]:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "SELECT * FROM sessions WHERE user_id = %s ORDER BY created_at DESC",
+        _fix("SELECT * FROM sessions WHERE user_id = %s ORDER BY created_at DESC"),
         (user_id,),
     )
     rows = cur.fetchall()
@@ -263,9 +318,9 @@ def get_sessions_last_week(user_id: int) -> list[dict]:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        """SELECT * FROM sessions WHERE user_id = %s
+        _fix("""SELECT * FROM sessions WHERE user_id = %s
            AND created_at >= NOW() - INTERVAL '7 days'
-           ORDER BY created_at DESC""",
+           ORDER BY created_at DESC"""),
         (user_id,),
     )
     rows = cur.fetchall()
@@ -281,7 +336,7 @@ def get_sessions_with_memo(user_id: int) -> list[dict]:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        """SELECT s.*, m.memo,
+        _fix("""SELECT s.*, m.memo,
                   p.question AS problem_question,
                   p.question_text AS problem_question_text,
                   p.correct_answer AS problem_correct_answer,
@@ -291,7 +346,7 @@ def get_sessions_with_memo(user_id: int) -> list[dict]:
            LEFT JOIN problems p ON p.id = s.problem_id
            WHERE s.user_id = %s
              AND (m.memo != '' OR s.question LIKE '[오답노트]%%' OR s.question LIKE '[모의고사]%%')
-           ORDER BY s.created_at DESC""",
+           ORDER BY s.created_at DESC"""),
         (user_id,),
     )
     rows = cur.fetchall()
@@ -303,13 +358,12 @@ def get_sessions_with_memo(user_id: int) -> list[dict]:
 def save_memo(user_id: int, session_id: int, memo: str):
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute(
-        """INSERT INTO memos (user_id, session_id, memo)
-           VALUES (%s, %s, %s)
-           ON CONFLICT (user_id, session_id)
-           DO UPDATE SET memo = EXCLUDED.memo, updated_at = CURRENT_TIMESTAMP""",
-        (user_id, session_id, memo),
-    )
+    _upsert(cur, "memos", ["user_id", "session_id"], {
+        "user_id": user_id,
+        "session_id": session_id,
+        "memo": memo,
+        "updated_at": "CURRENT_TIMESTAMP",
+    })
     conn.commit()
     cur.close()
     conn.close()
@@ -319,7 +373,7 @@ def get_memo(user_id: int, session_id: int) -> str:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "SELECT memo FROM memos WHERE user_id = %s AND session_id = %s",
+        _fix("SELECT memo FROM memos WHERE user_id = %s AND session_id = %s"),
         (user_id, session_id),
     )
     row = cur.fetchone()
@@ -338,14 +392,13 @@ def add_to_notebook(
 ) -> int:
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute(
+    session_id = _insert_returning(cur, conn,
         """INSERT INTO sessions (user_id, question, answer, image_data, image_mime)
            VALUES (%s, %s, %s, %s, %s) RETURNING id""",
         (user_id, f"[오답노트] {question}", answer, image_data, image_mime),
     )
-    session_id = cur.fetchone()["id"]
     cur.execute(
-        "INSERT INTO memos (user_id, session_id, memo) VALUES (%s, %s, %s)",
+        _fix("INSERT INTO memos (user_id, session_id, memo) VALUES (%s, %s, %s)"),
         (user_id, session_id, memo),
     )
     conn.commit()
@@ -358,7 +411,7 @@ def update_notebook_entry(session_id: int, user_id: int, question: str, answer: 
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "UPDATE sessions SET question = %s, answer = %s WHERE id = %s AND user_id = %s",
+        _fix("UPDATE sessions SET question = %s, answer = %s WHERE id = %s AND user_id = %s"),
         (f"[오답노트] {question}", answer, session_id, user_id),
     )
     conn.commit()
@@ -370,11 +423,11 @@ def delete_notebook_entry(session_id: int, user_id: int):
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "DELETE FROM memos WHERE session_id = %s AND user_id = %s",
+        _fix("DELETE FROM memos WHERE session_id = %s AND user_id = %s"),
         (session_id, user_id),
     )
     cur.execute(
-        "DELETE FROM sessions WHERE id = %s AND user_id = %s",
+        _fix("DELETE FROM sessions WHERE id = %s AND user_id = %s"),
         (session_id, user_id),
     )
     conn.commit()
@@ -399,7 +452,7 @@ def get_problems_by_round(exam_year: int, exam_round: int) -> list[dict]:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "SELECT * FROM problems WHERE exam_year = %s AND exam_round = %s ORDER BY id",
+        _fix("SELECT * FROM problems WHERE exam_year = %s AND exam_round = %s ORDER BY id"),
         (exam_year, exam_round),
     )
     rows = cur.fetchall()
@@ -412,9 +465,9 @@ def get_problems_by_ncs(agency: str, exam_year: int, domain: str) -> list[dict]:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        """SELECT * FROM problems
+        _fix("""SELECT * FROM problems
            WHERE exam_type = 'ncs' AND ncs_agency = %s AND exam_year = %s AND ncs_domain = %s
-           ORDER BY id""",
+           ORDER BY id"""),
         (agency, exam_year, domain),
     )
     rows = cur.fetchall()
@@ -464,10 +517,10 @@ def save_exam_attempt_ncs(user_id: int, agency: str, exam_year: int, domain: str
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        """INSERT INTO exam_attempts
+        _fix("""INSERT INTO exam_attempts
            (user_id, exam_year, exam_round, problem_id, user_answer, is_correct,
             exam_type, ncs_agency, ncs_domain)
-           VALUES (%s, %s, 0, %s, %s, %s, 'ncs', %s, %s)""",
+           VALUES (%s, %s, 0, %s, %s, %s, 'ncs', %s, %s)"""),
         (user_id, exam_year, problem_id, user_answer, int(is_correct), agency, domain),
     )
     conn.commit()
@@ -479,7 +532,7 @@ def update_problem_solution(problem_id: int, solution: str, correct_answer: str 
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "UPDATE problems SET solution = %s, correct_answer = %s WHERE id = %s",
+        _fix("UPDATE problems SET solution = %s, correct_answer = %s WHERE id = %s"),
         (solution, correct_answer, problem_id),
     )
     conn.commit()
@@ -491,7 +544,7 @@ def update_problem_embedding(problem_id: int, embedding_json: str):
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "UPDATE problems SET embedding = %s WHERE id = %s",
+        _fix("UPDATE problems SET embedding = %s WHERE id = %s"),
         (embedding_json, problem_id),
     )
     conn.commit()
@@ -503,7 +556,7 @@ def update_problem_question_text(problem_id: int, question_text: str):
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "UPDATE problems SET question_text = %s WHERE id = %s",
+        _fix("UPDATE problems SET question_text = %s WHERE id = %s"),
         (question_text, problem_id),
     )
     conn.commit()
@@ -524,13 +577,12 @@ def save_exam_attempt(
 ) -> int:
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute(
+    attempt_id = _insert_returning(cur, conn,
         """INSERT INTO exam_attempts
            (user_id, exam_year, exam_round, problem_id, user_answer, is_correct)
            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
         (user_id, exam_year, exam_round, problem_id, user_answer, int(is_correct)),
     )
-    attempt_id = cur.fetchone()["id"]
     conn.commit()
     cur.close()
     conn.close()
@@ -556,7 +608,7 @@ def auto_add_wrong_to_notebook(
         image_data = base64.b64decode(problem["image_data"])
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute(
+    session_id = _insert_returning(cur, conn,
         """INSERT INTO sessions (user_id, question, answer, image_data, image_mime, problem_id)
            VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
         (
@@ -568,9 +620,8 @@ def auto_add_wrong_to_notebook(
             problem.get("id"),
         ),
     )
-    session_id = cur.fetchone()["id"]
     cur.execute(
-        "INSERT INTO memos (user_id, session_id, memo) VALUES (%s, %s, %s)",
+        _fix("INSERT INTO memos (user_id, session_id, memo) VALUES (%s, %s, %s)"),
         (user_id, session_id, ""),
     )
     conn.commit()
@@ -582,12 +633,12 @@ def auto_add_wrong_to_notebook(
 # =============================================================
 # 오답노트 AI 토론 채팅 저장
 # =============================================================
-def get_notebook_chat(user_id: int, notebook_session_id: int) -> list:
+def get_notebook_chat(user_id: int, notebook_session_id: int, mode: str = "teacher") -> list:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "SELECT messages FROM notebook_chats WHERE user_id = %s AND notebook_session_id = %s",
-        (user_id, notebook_session_id),
+        _fix("SELECT messages FROM notebook_chats WHERE user_id = %s AND notebook_session_id = %s AND mode = %s"),
+        (user_id, notebook_session_id, mode),
     )
     row = cur.fetchone()
     cur.close()
@@ -595,16 +646,16 @@ def get_notebook_chat(user_id: int, notebook_session_id: int) -> list:
     return json.loads(row["messages"]) if row else []
 
 
-def save_notebook_chat(user_id: int, notebook_session_id: int, messages: list):
+def save_notebook_chat(user_id: int, notebook_session_id: int, messages: list, mode: str = "teacher"):
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute(
-        """INSERT INTO notebook_chats (user_id, notebook_session_id, messages, updated_at)
-           VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-           ON CONFLICT(user_id, notebook_session_id)
-           DO UPDATE SET messages = EXCLUDED.messages, updated_at = CURRENT_TIMESTAMP""",
-        (user_id, notebook_session_id, json.dumps(messages, ensure_ascii=False)),
-    )
+    _upsert(cur, "notebook_chats", ["user_id", "notebook_session_id", "mode"], {
+        "user_id": user_id,
+        "notebook_session_id": notebook_session_id,
+        "mode": mode,
+        "messages": json.dumps(messages, ensure_ascii=False),
+        "updated_at": "CURRENT_TIMESTAMP",
+    })
     conn.commit()
     cur.close()
     conn.close()
@@ -617,8 +668,8 @@ def get_learning_report(user_id: int) -> dict | None:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        """SELECT ai_pattern, ai_weakness, ai_advice, generated_at FROM learning_reports
-           WHERE user_id = %s ORDER BY generated_at DESC LIMIT 1""",
+        _fix("""SELECT ai_pattern, ai_weakness, ai_advice, generated_at FROM learning_reports
+           WHERE user_id = %s ORDER BY generated_at DESC LIMIT 1"""),
         (user_id,),
     )
     row = cur.fetchone()
@@ -631,8 +682,8 @@ def save_learning_report(user_id: int, ai_pattern: str, ai_advice: str, ai_weakn
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        """INSERT INTO learning_reports (user_id, ai_pattern, ai_weakness, ai_advice, generated_at)
-           VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)""",
+        _fix("""INSERT INTO learning_reports (user_id, ai_pattern, ai_weakness, ai_advice, generated_at)
+           VALUES (%s, %s, %s, %s, CURRENT_TIMESTAMP)"""),
         (user_id, ai_pattern, ai_weakness, ai_advice),
     )
     conn.commit()
@@ -646,7 +697,7 @@ def save_learning_report(user_id: int, ai_pattern: str, ai_advice: str, ai_weakn
 def get_credits(user_id: int) -> int:
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute("SELECT credits FROM users WHERE id = %s", (user_id,))
+    cur.execute(_fix("SELECT credits FROM users WHERE id = %s"), (user_id,))
     row = cur.fetchone()
     cur.close()
     conn.close()
@@ -656,7 +707,7 @@ def get_credits(user_id: int) -> int:
 def charge_credits(user_id: int, amount: int, reason: str = "관리자 충전"):
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute("UPDATE users SET credits = credits + %s WHERE id = %s", (amount, user_id))
+    cur.execute(_fix("UPDATE users SET credits = credits + %s WHERE id = %s"), (amount, user_id))
     conn.commit()
     cur.close()
     conn.close()
@@ -665,13 +716,13 @@ def charge_credits(user_id: int, amount: int, reason: str = "관리자 충전"):
 def deduct_credits(user_id: int, amount: int, reason: str) -> bool:
     conn = get_conn()
     cur = _cursor(conn)
-    cur.execute("SELECT credits FROM users WHERE id = %s", (user_id,))
+    cur.execute(_fix("SELECT credits FROM users WHERE id = %s"), (user_id,))
     row = cur.fetchone()
     if not row or row["credits"] < amount:
         cur.close()
         conn.close()
         return False
-    cur.execute("UPDATE users SET credits = credits - %s WHERE id = %s", (amount, user_id))
+    cur.execute(_fix("UPDATE users SET credits = credits - %s WHERE id = %s"), (amount, user_id))
     conn.commit()
     cur.close()
     conn.close()
@@ -695,7 +746,7 @@ def save_quiz_attempt(user_id: int, question_id: str, is_correct: bool):
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "INSERT INTO quiz_attempts (user_id, question_id, is_correct) VALUES (%s, %s, %s)",
+        _fix("INSERT INTO quiz_attempts (user_id, question_id, is_correct) VALUES (%s, %s, %s)"),
         (user_id, question_id, int(is_correct)),
     )
     conn.commit()
@@ -707,12 +758,12 @@ def get_quiz_stats(user_id: int) -> dict:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        """SELECT question_id,
+        _fix("""SELECT question_id,
                   SUM(CASE WHEN is_correct=0 THEN 1 ELSE 0 END) AS wrong,
                   SUM(CASE WHEN is_correct=1 THEN 1 ELSE 0 END) AS correct
            FROM quiz_attempts
            WHERE user_id = %s
-           GROUP BY question_id""",
+           GROUP BY question_id"""),
         (user_id,),
     )
     rows = cur.fetchall()

@@ -38,14 +38,14 @@ class NotebookChatRequest(BaseModel):
 
 
 @router.get("/notebook-chat/{session_id}", summary="오답노트 채팅 기록 불러오기")
-def get_chat(session_id: int, user=Depends(get_current_user)):
-    history = get_notebook_chat(user["id"], session_id)
+def get_chat(session_id: int, mode: str = "teacher", user=Depends(get_current_user)):
+    history = get_notebook_chat(user["id"], session_id, mode)
     return {"history": history}
 
 
 @router.post("/notebook-chat", summary="오답노트 메모 기반 AI 토론")
 def notebook_chat_api(req: NotebookChatRequest, user=Depends(get_current_user)):
-    history = get_notebook_chat(user["id"], req.session_id)
+    history = get_notebook_chat(user["id"], req.session_id, req.mode)
 
     img_bytes = base64.b64decode(req.image_data) if req.image_data else None
     reply = notebook_chat(req.question, req.memo, req.solution, history,
@@ -61,13 +61,13 @@ def notebook_chat_api(req: NotebookChatRequest, user=Depends(get_current_user)):
         if not history:
             history.append({"role": "assistant", "content": reply})
 
-    save_notebook_chat(user["id"], req.session_id, history)
+    save_notebook_chat(user["id"], req.session_id, history, req.mode)
     return {"reply": reply, "history": history}
 
 
 @router.post("/notebook-chat/stream", summary="오답노트 채팅 스트리밍")
 def notebook_chat_stream_api(req: NotebookChatRequest, user=Depends(get_current_user)):
-    history = get_notebook_chat(user["id"], req.session_id)
+    history = get_notebook_chat(user["id"], req.session_id, req.mode)
     img_bytes = base64.b64decode(req.image_data) if req.image_data else None
 
     # opener는 규칙 기반이라 크레딧 차감 제외
@@ -98,7 +98,7 @@ def notebook_chat_stream_api(req: NotebookChatRequest, user=Depends(get_current_
                 new_history.append({"role": "user", "content": req.user_message or "(필기 전송)", "has_image": bool(img_bytes)})
             new_history.append({"role": "assistant", "content": full_reply})
 
-        save_notebook_chat(user["id"], req.session_id, new_history)
+        save_notebook_chat(user["id"], req.session_id, new_history, req.mode)
         credits_left = get_credits(user["id"])
         yield f"data: {json.dumps({'done': True, 'history': new_history, 'credits_remaining': credits_left}, ensure_ascii=False)}\n\n"
 

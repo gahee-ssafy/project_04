@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 from typing import Optional
 from dependencies import get_current_user
-from database import get_conn, _cursor, charge_credits, get_all_users_credits
+from database import get_conn, _cursor, _fix, charge_credits, get_all_users_credits
 from services.generate import generate_ncs_questions
 
 router = APIRouter()
@@ -107,10 +107,10 @@ def save_ncs(req: SaveRequest, user=Depends(get_current_user)):
         full_question = f"{q.question}\n{choices_text}"
 
         cur.execute(
-            """INSERT INTO problems
+            _fix("""INSERT INTO problems
                (topic, question, difficulty, correct_answer, solution,
                 exam_type, ncs_agency, ncs_domain, exam_year)
-               VALUES (%s, %s, %s, %s, %s, 'ncs', %s, %s, %s)""",
+               VALUES (%s, %s, %s, %s, %s, 'ncs', %s, %s, %s)"""),
             (
                 req.domain,
                 full_question,

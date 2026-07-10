@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _API_KEY = os.environ.get("MONOGPT_API_KEY")
-_BASE_URL = "https://monogpt.kr/api/v1"
-_MODEL = "gpt-5.1"
+_BASE_URL = "https://monogpt.kr/api/monorouter/cursor/v1"
+_MODEL = "~google/gemini-3.5-flash"
 
 # =============================================================
 # 시스템 프롬프트
@@ -87,12 +87,14 @@ def _chat(messages: list[dict]) -> str:
     headers = {
         "Authorization": f"Bearer {_API_KEY}",
         "Content-Type": "application/json",
-        "Idempotency-Key": str(uuid.uuid4()),
     }
     body = {"model": _MODEL, "messages": messages}
-    resp = httpx.post(f"{_BASE_URL}/chat", headers=headers, json=body, timeout=60)
+    resp = httpx.post(f"{_BASE_URL}/chat/completions", headers=headers, json=body, timeout=60)
+    if not resp.is_success:
+        print(f"[MonoGPT ERROR] status={resp.status_code} body={resp.text}")
     resp.raise_for_status()
-    return resp.json().get("reply", "")
+    data = resp.json()
+    return data["choices"][0]["message"]["content"]
 
 
 def _normalize_math(text: str) -> str:
