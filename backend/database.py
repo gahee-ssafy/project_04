@@ -2,6 +2,7 @@ import json
 import hashlib
 import base64
 import os
+from datetime import datetime, date
 import psycopg2
 import psycopg2.extras
 import psycopg2.errors
@@ -28,9 +29,17 @@ def row_to_dict(row) -> dict:
     if row is None:
         return None
     d = dict(row)
-    if "image_data" in d and d["image_data"]:
-        d["image_data"] = base64.b64encode(bytes(d["image_data"])).decode("utf-8")
-    return d
+    result = {}
+    for k, v in d.items():
+        if k == "image_data" and v is not None:
+            result[k] = base64.b64encode(bytes(v)).decode("utf-8")
+        elif isinstance(v, (datetime, date)):
+            result[k] = v.isoformat()
+        elif isinstance(v, memoryview):
+            result[k] = base64.b64encode(bytes(v)).decode("utf-8")
+        else:
+            result[k] = v
+    return result
 
 
 def init_db():
