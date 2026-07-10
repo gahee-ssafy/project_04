@@ -9,8 +9,8 @@ from dotenv import load_dotenv
 load_dotenv()
 
 _API_KEY = os.environ.get("MONOGPT_API_KEY")
-_BASE_URL = "https://monogpt.kr/api/monorouter/cursor/v1"
-_MODEL = "~google/gemini-3.5-flash"
+_BASE_URL = "https://monogpt.kr/api/monorouter/v1/gemini"
+_MODEL = "gemini-3.5-flash"
 
 # =============================================================
 # 시스템 프롬프트
@@ -84,17 +84,33 @@ NOTEBOOK_STUDENT_PROMPT = """당신은 NCS 직업기초능력을 전혀 모르�
 # MonoGPT HTTP 호출
 # =============================================================
 def _chat(messages: list[dict]) -> str:
+    system_instruction = None
+    contents = []
+    for msg in messages:
+        role = msg["role"]
+        content = msg["content"]
+        if role == "system":
+            system_instruction = {"parts": [{"text": content}]}
+        elif role == "assistant":
+            contents.append({"role": "model", "parts": [{"text": content}]})
+        else:
+            contents.append({"role": "user", "parts": [{"text": content}]})
+
+    body = {"contents": contents}
+    if system_instruction:
+        body["system_instruction"] = system_instruction
+
     headers = {
-        "Authorization": f"Bearer {_API_KEY}",
+        "x-goog-api-key": _API_KEY,
         "Content-Type": "application/json",
     }
-    body = {"model": _MODEL, "messages": messages}
-    resp = httpx.post(f"{_BASE_URL}/chat/completions", headers=headers, json=body, timeout=60)
+    url = f"{_BASE_URL}/v1beta/models/{_MODEL}:generateContent"
+    resp = httpx.post(url, headers=headers, json=body, timeout=60)
     if not resp.is_success:
         print(f"[MonoGPT ERROR] status={resp.status_code} body={resp.text}")
     resp.raise_for_status()
     data = resp.json()
-    return data["choices"][0]["message"]["content"]
+    return data["candidates"][0]["content"]["parts"][0]["text"]
 
 
 def _normalize_math(text: str) -> str:
