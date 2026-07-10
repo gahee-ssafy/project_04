@@ -11,6 +11,13 @@ from services.ai import ask, notebook_chat, notebook_chat_stream
 router = APIRouter()
 
 
+@router.get("/debug-key", summary="API 키 확인용 임시 엔드포인트")
+def debug_key():
+    import os
+    key = os.environ.get("MONOGPT_API_KEY")
+    return {"key_set": key is not None, "key_prefix": key[:10] if key else None}
+
+
 @router.post("/ask", summary="자유 질문 (AI 풀이 생성)")
 def ask_question(req: AskRequest, user=Depends(get_current_user)):
     if not deduct_credits(user["id"], 1, "AI 질문"):
