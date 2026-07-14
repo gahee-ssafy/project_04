@@ -443,31 +443,138 @@ export default function NotebookPage() {
   )
 }
 
+function ChatSection({
+  mode, stepLabel, title, hint, show, onToggle,
+  history, loading, input, setInput, pendingImage,
+  onCapture, onRemoveImage, onSend, bottomRef,
+  memo, setMemo, onSaveMemo, itemId,
+}) {
+  return (
+    <div className="note-collapsible-section note-chat-section">
+      <button className="note-section-toggle" onClick={onToggle}>
+        <span className="note-step-info">
+          <span className="note-step-badge">{stepLabel}</span>
+          <span className="note-step-title">{title}</span>
+          {!show && <span className="note-step-hint">{hint}</span>}
+        </span>
+        <span className={`toggle-arrow ${show ? 'open' : ''}`}>›</span>
+      </button>
+      {show && (
+        <div className="note-chat-panel">
+          <div className="chat-messages">
+            {history.map((msg, i) => {
+              const memoMatch = msg.role === 'assistant' && msg.content.match(/📝 메모 제안[:：]\s*(.+)/s)
+              const memoSuggestion = memoMatch ? memoMatch[1].trim().split('\n')[0].trim() : null
+              const paragraphs = msg.role === 'assistant'
+                ? msg.content.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
+                : null
+              return (
+                <div key={i} className={`chat-bubble ${msg.role}`}>
+                  {paragraphs ? (
+                    <div className="chat-bubble-paragraphs">
+                      {paragraphs.map((para, j) => (
+                        <div key={j} className="chat-para-row">
+                          <MarkdownRenderer>{para}</MarkdownRenderer>
+                          <button
+                            className="btn-para-save"
+                            title="메모에 추가"
+                            onClick={async () => {
+                              const next = memo ? memo + '\n\n' + para : para
+                              setMemo(next)
+                              await onSaveMemo(itemId, next)
+                            }}
+                          >+</button>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <MarkdownRenderer>{msg.content}</MarkdownRenderer>
+                  )}
+                  {memoSuggestion && (
+                    <button
+                      className="btn-save-memo-suggestion"
+                      onClick={async () => {
+                        await onSaveMemo(itemId, memoSuggestion)
+                        setMemo(memoSuggestion)
+                      }}
+                    >
+                      📋 메모에 바로 저장
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+            {loading && (
+              <div className="chat-bubble assistant chat-loading">
+                <span>●</span><span>●</span><span>●</span>
+              </div>
+            )}
+            <div ref={bottomRef} />
+          </div>
+          {pendingImage && (
+            <div className="chat-image-preview">
+              <img src={`data:image/png;base64,${pendingImage}`} alt="필기 미리보기" />
+              <button className="btn-remove-image" onClick={onRemoveImage}>✕</button>
+            </div>
+          )}
+          <div className="chat-input-row">
+            <button
+              className={`btn-capture-drawing ${pendingImage ? 'has-image' : ''}`}
+              onClick={onCapture}
+              title="필기 캡처해서 전송"
+            >✏️</button>
+            <textarea
+              className="chat-input"
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSend() } }}
+              placeholder={mode === 'teacher' ? 'AI 선생님에게 질문해보세요...' : '이해한 내용을 설명하거나 필기를 전송해보세요...'}
+              rows={2}
+            />
+            <button className="btn-chat-send" onClick={onSend} disabled={loading || (!input.trim() && !pendingImage)}>
+              전송
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
   const [memo, setMemo]           = useState(item.memo || '')
   const [editing, setEditing]     = useState(false)
   const [showMemo, setShowMemo]   = useState(!!item.memo) // 메모 있으면 기본 펼침
   const [showSolution, setShowSolution] = useState(false)
-  const [showChat, setShowChat]   = useState(false)
-  const [chatHistory, setChatHistory] = useState([])
-  const [chatInput, setChatInput] = useState('')
-  const [chatLoading, setChatLoading] = useState(false)
-  const [pendingImage, setPendingImage] = useState(null)
-  const [chatMode, setChatMode]   = useState('teacher') // 'teacher' | 'student'
-  const chatBottomRef = useRef(null)
+  const [showTeacherChat, setShowTeacherChat] = useState(false)
+  const [showStudentChat, setShowStudentChat] = useState(false)
+  const [teacherHistory, setTeacherHistory] = useState([])
+  const [studentHistory, setStudentHistory] = useState([])
+  const [teacherInput, setTeacherInput] = useState('')
+  const [studentInput, setStudentInput] = useState('')
+  const [teacherLoading, setTeacherLoading] = useState(false)
+  const [studentLoading, setStudentLoading] = useState(false)
+  const [teacherImage, setTeacherImage] = useState(null)
+  const [studentImage, setStudentImage] = useState(null)
+  const teacherBottomRef = useRef(null)
+  const studentBottomRef = useRef(null)
+  const teacherCanvasRef = useRef(null)
+  const studentCanvasRef = useRef(null)
   const canvasRef = useRef(null)
   const hasMemo = !!item.memo
 
   // 문제가 바뀌면 초기화
   useEffect(() => {
-    setShowChat(false)
-    setChatHistory([])
-    setChatInput('')
+    setShowTeacherChat(false)
+    setShowStudentChat(false)
+    setTeacherHistory([])
+    setStudentHistory([])
+    setTeacherInput('')
+    setStudentInput('')
     setShowSolution(false)
     setShowMemo(!!item.memo)
     setEditing(false)
     setMemo(item.memo || '')
-    setChatMode('teacher')
   }, [item.id])
 
   const handleSave = async () => {
@@ -475,20 +582,21 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
     setEditing(false)
   }
 
-  const streamChat = async ({ userMsg = '', imgToSend = null, isOpener = false, modeOverride = null } = {}) => {
+  const streamChat = async ({ mode, userMsg = '', imgToSend = null, isOpener = false } = {}) => {
     const isProd = !['localhost', '127.0.0.1'].includes(window.location.hostname)
     const baseUrl = isProd
       ? 'https://project04-production.up.railway.app'
       : `http://${window.location.hostname}:8000`
     const token = localStorage.getItem('token')
 
-    // 유저 메시지 먼저 UI에 추가
+    const setHistory = mode === 'teacher' ? setTeacherHistory : setStudentHistory
+    const setLoading = mode === 'teacher' ? setTeacherLoading : setStudentLoading
+
     if (!isOpener) {
-      setChatHistory(prev => [...prev, { role: 'user', content: userMsg || '(필기 전송)', has_image: !!imgToSend }])
+      setHistory(prev => [...prev, { role: 'user', content: userMsg || '(필기 전송)', has_image: !!imgToSend }])
     }
-    // 빈 AI 버블 추가 (스트리밍 중 채워짐)
-    setChatHistory(prev => [...prev, { role: 'assistant', content: '' }])
-    setChatLoading(true)
+    setHistory(prev => [...prev, { role: 'assistant', content: '' }])
+    setLoading(true)
 
     try {
       const res = await fetch(`${baseUrl}/ai/notebook-chat/stream`, {
@@ -502,7 +610,7 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
           user_message: userMsg,
           image_data: imgToSend || '',
           image_mime: 'image/png',
-          mode: modeOverride ?? chatMode,
+          mode,
         }),
       })
 
@@ -515,67 +623,75 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
         if (done) break
         buf += decoder.decode(value, { stream: true })
         const lines = buf.split('\n')
-        buf = lines.pop() // 미완성 줄 보관
+        buf = lines.pop()
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const data = JSON.parse(line.slice(6))
           if (data.text) {
-            setChatHistory(prev => {
+            setHistory(prev => {
               const next = [...prev]
               next[next.length - 1] = { role: 'assistant', content: next[next.length - 1].content + data.text }
               return next
             })
           }
           if (data.done) {
-            setChatHistory(data.history)
+            setHistory(data.history)
             if (data.credits_remaining !== undefined) dispatchCreditsUpdate(data.credits_remaining)
           }
         }
       }
     } finally {
-      setChatLoading(false)
+      setLoading(false)
     }
   }
 
-  const openChat = async () => {
-    setShowChat(true)
-    if (chatHistory.length === 0) {
-      const saved = await getNotebookChatHistory(item.id)
+  const openChat = async (mode) => {
+    const setShow = mode === 'teacher' ? setShowTeacherChat : setShowStudentChat
+    const history = mode === 'teacher' ? teacherHistory : studentHistory
+    const setHistory = mode === 'teacher' ? setTeacherHistory : setStudentHistory
+
+    setShow(true)
+    if (history.length === 0) {
+      const saved = await getNotebookChatHistory(item.id, mode)
       if (saved.data.history.length > 0) {
-        setChatHistory(saved.data.history)
+        setHistory(saved.data.history)
       } else {
-        await streamChat({ isOpener: true })
+        await streamChat({ mode, isOpener: true })
       }
     }
   }
 
-  const switchMode = async (newMode) => {
-    if (newMode === chatMode) return
-    setChatMode(newMode)
-    setChatHistory([])
-    setShowChat(true)
-    await streamChat({ isOpener: true, modeOverride: newMode })
+  const sendMessage = async (mode) => {
+    const input = mode === 'teacher' ? teacherInput : studentInput
+    const pendingImage = mode === 'teacher' ? teacherImage : studentImage
+    const setInput = mode === 'teacher' ? setTeacherInput : setStudentInput
+    const setImage = mode === 'teacher' ? setTeacherImage : setStudentImage
+    const loading = mode === 'teacher' ? teacherLoading : studentLoading
+
+    const msg = input.trim()
+    if ((!msg && !pendingImage) || loading) return
+    setInput('')
+    const imgToSend = pendingImage
+    setImage(null)
+    await streamChat({ mode, userMsg: msg, imgToSend })
   }
 
-  const captureDrawing = () => {
-    const dataUrl = canvasRef.current?.capture()
+  const captureDrawing = (mode) => {
+    const ref = mode === 'teacher' ? teacherCanvasRef : studentCanvasRef
+    const dataUrl = ref.current?.capture()
     if (!dataUrl) return
     const b64 = dataUrl.split(',')[1]
-    setPendingImage(b64)
-  }
-
-  const sendMessage = async () => {
-    const msg = chatInput.trim()
-    if ((!msg && !pendingImage) || chatLoading) return
-    setChatInput('')
-    const imgToSend = pendingImage
-    setPendingImage(null)
-    await streamChat({ userMsg: msg, imgToSend })
+    const setImage = mode === 'teacher' ? setTeacherImage : setStudentImage
+    setImage(b64)
   }
 
   useEffect(() => {
-    chatBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [chatHistory, chatLoading])
+    teacherBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [teacherHistory, teacherLoading])
+
+  useEffect(() => {
+    studentBottomRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [studentHistory, studentLoading])
 
   return (
     <div className="note-card">
@@ -690,118 +806,53 @@ function NoteCard({ item, displayQ, examTag, onSaveMemo, onDelete }) {
         </div>
       )}
 
-      {/* ④ AI 토론 */}
-      <div className="note-collapsible-section note-chat-section">
-        <button
-          className="note-section-toggle"
-          onClick={() => showChat ? setShowChat(false) : openChat()}
-        >
-          <span className="note-step-info">
-            <span className="note-step-badge">{item.answer ? 'Step 3' : 'Step 2'}</span>
-            <span className="note-step-title">AI 토론</span>
-          </span>
-          <span className={`toggle-arrow ${showChat ? 'open' : ''}`}>›</span>
-        </button>
-        {showChat && (
-          <div className="note-chat-panel">
-            {/* 모드 선택 */}
-            <div className="chat-mode-bar">
-              <button
-                className={`btn-chat-mode ${chatMode === 'teacher' ? 'active' : ''}`}
-                onClick={() => switchMode('teacher')}
-              >
-                선생모드
-              </button>
-              <button
-                className={`btn-chat-mode ${chatMode === 'student' ? 'active' : ''}`}
-                onClick={() => switchMode('student')}
-              >
-                생선모드 🐟
-              </button>
-              {chatMode === 'student' && (
-                <span className="chat-mode-hint">AI가 학생이 되어 질문해요. 개념을 설명해보세요!</span>
-              )}
-            </div>
-            <div className="chat-messages">
-              {chatHistory.map((msg, i) => {
-                const memoMatch = msg.role === 'assistant' && msg.content.match(/📝 메모 제안[:：]\s*(.+)/s)
-                const memoSuggestion = memoMatch ? memoMatch[1].trim().split('\n')[0].trim() : null
+      {/* ④ 선생모드 채팅 */}
+      <ChatSection
+        mode="teacher"
+        stepLabel={item.answer ? 'Step 3' : 'Step 2'}
+        title="선생모드"
+        hint="AI가 선생님이 되어 설명해줘요"
+        show={showTeacherChat}
+        onToggle={() => showTeacherChat ? setShowTeacherChat(false) : openChat('teacher')}
+        history={teacherHistory}
+        loading={teacherLoading}
+        input={teacherInput}
+        setInput={setTeacherInput}
+        pendingImage={teacherImage}
+        onCapture={() => captureDrawing('teacher')}
+        onRemoveImage={() => setTeacherImage(null)}
+        onSend={() => sendMessage('teacher')}
+        bottomRef={teacherBottomRef}
+        canvasRef={teacherCanvasRef}
+        memo={memo}
+        setMemo={setMemo}
+        onSaveMemo={onSaveMemo}
+        itemId={item.id}
+      />
 
-                // assistant 메시지를 문단별로 분리
-                const paragraphs = msg.role === 'assistant'
-                  ? msg.content.split(/\n{2,}/).map(p => p.trim()).filter(Boolean)
-                  : null
-
-                return (
-                  <div key={i} className={`chat-bubble ${msg.role}`}>
-                    {paragraphs ? (
-                      <div className="chat-bubble-paragraphs">
-                        {paragraphs.map((para, j) => (
-                          <div key={j} className="chat-para-row">
-                            <MarkdownRenderer>{para}</MarkdownRenderer>
-                            <button
-                              className="btn-para-save"
-                              title="메모에 추가"
-                              onClick={async () => {
-                                const next = memo ? memo + '\n\n' + para : para
-                                setMemo(next)
-                                await onSaveMemo(item.id, next)
-                              }}
-                            >+</button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <MarkdownRenderer>{msg.content}</MarkdownRenderer>
-                    )}
-                    {memoSuggestion && (
-                      <button
-                        className="btn-save-memo-suggestion"
-                        onClick={async () => {
-                          await onSaveMemo(item.id, memoSuggestion)
-                          setMemo(memoSuggestion)
-                        }}
-                      >
-                        📋 메모에 바로 저장
-                      </button>
-                    )}
-                  </div>
-                )
-              })}
-              {chatLoading && (
-                <div className="chat-bubble assistant chat-loading">
-                  <span>●</span><span>●</span><span>●</span>
-                </div>
-              )}
-              <div ref={chatBottomRef} />
-            </div>
-            {pendingImage && (
-              <div className="chat-image-preview">
-                <img src={`data:image/png;base64,${pendingImage}`} alt="필기 미리보기" />
-                <button className="btn-remove-image" onClick={() => setPendingImage(null)}>✕</button>
-              </div>
-            )}
-            <div className="chat-input-row">
-              <button
-                className={`btn-capture-drawing ${pendingImage ? 'has-image' : ''}`}
-                onClick={captureDrawing}
-                title="필기 캡처해서 전송"
-              >✏️</button>
-              <textarea
-                className="chat-input"
-                value={chatInput}
-                onChange={e => setChatInput(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage() } }}
-                placeholder="이해한 내용을 설명하거나 필기를 전송해보세요..."
-                rows={2}
-              />
-              <button className="btn-chat-send" onClick={sendMessage} disabled={chatLoading || (!chatInput.trim() && !pendingImage)}>
-                전송
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
+      {/* ⑤ 생선모드 채팅 */}
+      <ChatSection
+        mode="student"
+        stepLabel={item.answer ? 'Step 4' : 'Step 3'}
+        title="생선모드 🐟"
+        hint="AI가 학생이 되어 질문해요. 개념을 설명해보세요!"
+        show={showStudentChat}
+        onToggle={() => showStudentChat ? setShowStudentChat(false) : openChat('student')}
+        history={studentHistory}
+        loading={studentLoading}
+        input={studentInput}
+        setInput={setStudentInput}
+        pendingImage={studentImage}
+        onCapture={() => captureDrawing('student')}
+        onRemoveImage={() => setStudentImage(null)}
+        onSend={() => sendMessage('student')}
+        bottomRef={studentBottomRef}
+        canvasRef={studentCanvasRef}
+        memo={memo}
+        setMemo={setMemo}
+        onSaveMemo={onSaveMemo}
+        itemId={item.id}
+      />
     </div>
   )
 }

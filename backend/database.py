@@ -129,8 +129,24 @@ def init_db():
             notebook_session_id INTEGER NOT NULL REFERENCES sessions(id),
             messages TEXT NOT NULL DEFAULT '[]',
             updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            UNIQUE(user_id, notebook_session_id)
+            mode TEXT NOT NULL DEFAULT 'teacher',
+            UNIQUE(user_id, notebook_session_id, mode)
         )
+    """)
+    # 기존 테이블에 mode 컬럼이 없으면 추가 (마이그레이션)
+    cur.execute("""
+        DO $$
+        BEGIN
+            IF NOT EXISTS (
+                SELECT 1 FROM information_schema.columns
+                WHERE table_name='notebook_chats' AND column_name='mode'
+            ) THEN
+                ALTER TABLE notebook_chats ADD COLUMN mode TEXT NOT NULL DEFAULT 'teacher';
+                ALTER TABLE notebook_chats DROP CONSTRAINT IF EXISTS notebook_chats_user_id_notebook_session_id_key;
+                ALTER TABLE notebook_chats ADD CONSTRAINT notebook_chats_user_id_notebook_session_id_mode_key
+                    UNIQUE(user_id, notebook_session_id, mode);
+            END IF;
+        END $$;
     """)
 
     cur.execute("""
@@ -591,12 +607,12 @@ def auto_add_wrong_to_notebook(
 # =============================================================
 # 오답노트 AI 토론 채팅 저장
 # =============================================================
-def get_notebook_chat(user_id: int, notebook_session_id: int) -> list:
+def get_notebook_chat(user_id: int, notebook_session_id: int, mode: str = "teacher") -> list:
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        "SELECT messages FROM notebook_chats WHERE user_id = %s AND notebook_session_id = %s",
-        (user_id, notebook_session_id),
+        "SELECT messages FROM notebook_chats WHERE user_id = %s AND notebook_session_id = %s AND mode = %s",
+        (user_id, notebook_session_id, mode),
     )
     row = cur.fetchone()
     cur.close()
@@ -604,15 +620,15 @@ def get_notebook_chat(user_id: int, notebook_session_id: int) -> list:
     return json.loads(row["messages"]) if row else []
 
 
-def save_notebook_chat(user_id: int, notebook_session_id: int, messages: list):
+def save_notebook_chat(user_id: int, notebook_session_id: int, messages: list, mode: str = "teacher"):
     conn = get_conn()
     cur = _cursor(conn)
     cur.execute(
-        """INSERT INTO notebook_chats (user_id, notebook_session_id, messages, updated_at)
-           VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
-           ON CONFLICT(user_id, notebook_session_id)
+        """INSERT INTO notebook_chats (user_id, notebook_session_id, messages, updated_at, mode)
+           VALUES (%s, %s, %s, CURRENT_TIMESTAMP, %s)
+           ON CONFLICT(user_id, notebook_session_id, mode)
            DO UPDATE SET messages = EXCLUDED.messages, updated_at = CURRENT_TIMESTAMP""",
-        (user_id, notebook_session_id, json.dumps(messages, ensure_ascii=False)),
+        (user_id, notebook_session_id, json.dumps(messages, ensure_ascii=False), mode),
     )
     conn.commit()
     cur.close()

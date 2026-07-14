@@ -11,12 +11,6 @@ from services.ai import ask, notebook_chat, notebook_chat_stream
 router = APIRouter()
 
 
-@router.get("/debug-key", summary="API 키 확인용 임시 엔드포인트")
-def debug_key():
-    import os
-    key = os.environ.get("MONOGPT_API_KEY")
-    return {"key_set": key is not None, "key_prefix": key[:10] if key else None}
-
 
 @router.post("/ask", summary="자유 질문 (AI 풀이 생성)")
 def ask_question(req: AskRequest, user=Depends(get_current_user)):
@@ -45,8 +39,8 @@ class NotebookChatRequest(BaseModel):
 
 
 @router.get("/notebook-chat/{session_id}", summary="오답노트 채팅 기록 불러오기")
-def get_chat(session_id: int, user=Depends(get_current_user)):
-    history = get_notebook_chat(user["id"], session_id)
+def get_chat(session_id: int, mode: str = "teacher", user=Depends(get_current_user)):
+    history = get_notebook_chat(user["id"], session_id, mode=mode)
     return {"history": history}
 
 
@@ -74,7 +68,7 @@ def notebook_chat_api(req: NotebookChatRequest, user=Depends(get_current_user)):
 
 @router.post("/notebook-chat/stream", summary="오답노트 채팅 스트리밍")
 def notebook_chat_stream_api(req: NotebookChatRequest, user=Depends(get_current_user)):
-    history = get_notebook_chat(user["id"], req.session_id)
+    history = get_notebook_chat(user["id"], req.session_id, mode=req.mode)
     img_bytes = base64.b64decode(req.image_data) if req.image_data else None
 
     # opener는 규칙 기반이라 크레딧 차감 제외
@@ -105,7 +99,7 @@ def notebook_chat_stream_api(req: NotebookChatRequest, user=Depends(get_current_
                 new_history.append({"role": "user", "content": req.user_message or "(필기 전송)", "has_image": bool(img_bytes)})
             new_history.append({"role": "assistant", "content": full_reply})
 
-        save_notebook_chat(user["id"], req.session_id, new_history)
+        save_notebook_chat(user["id"], req.session_id, new_history, mode=req.mode)
         credits_left = get_credits(user["id"])
         yield f"data: {json.dumps({'done': True, 'history': new_history, 'credits_remaining': credits_left}, ensure_ascii=False)}\n\n"
 
